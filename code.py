@@ -303,7 +303,7 @@ def check_and_start_next_mode():
     """
     global current_mode, current_state, mode_start_time, mode_duration, post_mode_wait_time, post_mode_wait_duration, led_mode_color
     
-    # 随机选择一种浏览行为
+    # 随机选择一种浏览行为，降低模式切换的概率，让每个模式持续更长时间
     action = random.choice([
         "web_browsing",     # 网页浏览漫游
         "page_scanning",    # 页面扫描
@@ -323,8 +323,8 @@ def check_and_start_next_mode():
         current_state = start_exploratory_movement()
     
     mode_start_time = time.monotonic()
-    # 设置一个合理的模式持续时间
-    mode_duration = random.uniform(2, 5)
+    # 设置一个更长的模式持续时间，降低切换频率
+    mode_duration = random.uniform(5, 10)
 
 # 初始化第一个模式
 check_and_start_next_mode()
@@ -349,21 +349,21 @@ while True:
                 # 模式完成，设置等待时间
                 update_led_for_mode(current_mode, False)
                 post_mode_wait_time = current_time
-                post_mode_wait_duration = random.uniform(1, 3)
+                post_mode_wait_duration = random.uniform(3, 6)
                 current_mode = None
         elif current_mode == "page_scanning" and current_state:
             if update_page_scanning(current_state):
                 # 模式完成，设置等待时间
                 update_led_for_mode(current_mode, False)
                 post_mode_wait_time = current_time
-                post_mode_wait_duration = random.uniform(1, 3)
+                post_mode_wait_duration = random.uniform(3, 6)
                 current_mode = None
         elif current_mode == "exploratory_move" and current_state:
             if update_exploratory_movement(current_state):
                 # 模式完成，设置等待时间
                 update_led_for_mode(current_mode, False)
                 post_mode_wait_time = current_time
-                post_mode_wait_duration = random.uniform(1, 3)
+                post_mode_wait_duration = random.uniform(3, 6)
                 current_mode = None
         
         # 检查是否需要启动新模式
