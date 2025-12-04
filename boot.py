@@ -1,25 +1,24 @@
 # boot.py - 在CircuitPython启动时运行
-
 import storage
 import microcontroller
-import sys
 import usb_cdc
+import usb_hid
+import usb_midi
+
+# 禁用USB CDC
+usb_cdc.disable()
+
+# 禁用USB MIDI
+usb_midi.disable()
+
+# 禁用USB HID
+usb_hid.disable()
 
 # 如果需要禁用USB存储（可选）
 storage.disable_usb_drive()
 
-# 完全禁用串口功能
-try:
-    usb_cdc.disable()
-except:
-    pass
-
-# 禁用串口输出
-sys.stdout = None
-sys.stderr = None
+# 启用USB HID MOUSE
+usb_hid.enable((usb_hid.Device.MOUSE,))  # 只启用鼠标
 
 # 设置下次复位时运行正常模式
 microcontroller.on_next_reset(microcontroller.RunMode.NORMAL)
-
-# 确保HID设备已启用
-# 默认情况下，CircuitPython会启用键盘和鼠标HID设备
