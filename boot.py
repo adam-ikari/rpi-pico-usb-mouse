@@ -2,9 +2,21 @@
 
 import storage
 import microcontroller
+import sys
+import usb_cdc
 
 # 如果需要禁用USB存储（可选）
 storage.disable_usb_drive()
+
+# 完全禁用串口功能
+try:
+    usb_cdc.disable()
+except:
+    pass
+
+# 禁用串口输出
+sys.stdout = None
+sys.stderr = None
 
 # 设置下次复位时运行正常模式
 microcontroller.on_next_reset(microcontroller.RunMode.NORMAL)
