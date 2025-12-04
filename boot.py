@@ -1,6 +1,7 @@
 # boot.py - 在CircuitPython启动时运行
-import storage
+
 import microcontroller
+import storage
 import usb_cdc
 import usb_hid
 import usb_midi
