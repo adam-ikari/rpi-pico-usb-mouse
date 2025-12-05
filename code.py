@@ -3,6 +3,7 @@ import usb_hid
 import random
 import math
 from adafruit_hid.mouse import Mouse
+import board
 import neopixel
 from pin_config import LED_PIN
 from constants import *
@@ -132,21 +133,24 @@ class MouseMover:
         
         profile = []
         
-        # 加速阶段
+        # 加速阶段 - 更缓慢的加速
         for i in range(accel_steps):
-            # 从ACCEL_START_FACTOR加速到ACCEL_END_FACTOR，使用平方函数使加速更自然
-            factor = ACCEL_START_FACTOR + (ACCEL_END_FACTOR - ACCEL_START_FACTOR) * (i / accel_steps) ** 2
+            # 从ACCEL_START_FACTOR加速到ACCEL_END_FACTOR，使用更平缓的曲线
+            t = i / accel_steps
+            factor = ACCEL_START_FACTOR + (ACCEL_END_FACTOR - ACCEL_START_FACTOR) * t ** 2  # 使用平方函数使加速更平缓
             profile.append(factor)
         
         # 匀速阶段
         for i in range(const_steps):
-            profile.append(1.0 + random.uniform(CONSTANT_PHASE_MIN_VARIATION, CONSTANT_PHASE_MAX_VARIATION))  # 稍微变化以模拟手部微小抖动
+            # 减少匀速阶段的速度波动
+            profile.append(1.0 + random.uniform(CONSTANT_PHASE_MIN_VARIATION, CONSTANT_PHASE_MAX_VARIATION))
         
-        # 减速阶段
+        # 减速阶段 - 更缓慢的减速
         for i in range(decel_steps):
-            # 从DECEL_START_FACTOR减速到DECEL_END_FACTOR，使用平方函数使减速更自然
-            factor = DECEL_START_FACTOR - (DECEL_START_FACTOR - DECEL_END_FACTOR) * (i / decel_steps) ** 2
-            profile.append(max(DECEL_MIN_FACTOR, factor))  # 确保不低于最小值
+            # 从DECEL_START_FACTOR减速到DECEL_END_FACTOR，使用更平缓的曲线
+            t = i / decel_steps
+            factor = DECEL_START_FACTOR - (DECEL_START_FACTOR - DECEL_END_FACTOR) * t ** 2  # 使用平方函数使减速更平缓
+            profile.append(max(DECEL_MIN_FACTOR, factor))
         
         return profile
 
@@ -161,7 +165,7 @@ class MouseMover:
 
         # 增加更多步骤以实现更自然的曲线移动
         base_steps = max(int(distance / SMALL_MOVE_BASE_DISTANCE), 5)
-        steps = int(base_steps * random.uniform(SMALL_MOVE_DISTANCE_FACTOR_MIN, SMALL_MOVE_DISTANCE_FACTOR_MAX))  # 增加路径长度，模拟人类的不精确移动
+        steps = int(base_steps * random.uniform(SMALL_MOVE_DISTANCE_FACTOR_MIN, SMALL_MOVE_DISTANCE_FACTOR_MAX))
         
         # 创建速度变化曲线
         velocity_profile = self._create_velocity_profile(steps)
@@ -182,19 +186,19 @@ class MouseMover:
             actual_x = base_x * velocity_factor
             actual_y = base_y * velocity_factor
             
-            # 添加更多的随机偏移，模拟人类手部微小抖动
+            # 添加更小的随机偏移，模拟人类手部微小抖动
             offset_x = random.uniform(SMALL_MOVE_OFFSET_MIN, SMALL_MOVE_OFFSET_MAX) * velocity_factor
             offset_y = random.uniform(SMALL_MOVE_OFFSET_MIN, SMALL_MOVE_OFFSET_MAX) * velocity_factor
             actual_x += offset_x
             actual_y += offset_y
             
-            # 每隔几步骤添加一个稍大的偏移，模拟人类调整方向
-            if i % random.randint(DIRECTION_ADJUST_INTERVAL_MIN, DIRECTION_ADJUST_INTERVAL_MAX) == 0:
+            # 减少方向调整频率
+            if i % random.randint(DIRECTION_ADJUST_INTERVAL_MIN, DIRECTION_ADJUST_INTERVAL_MAX) == 0 and i > 0:
                 actual_x += random.uniform(LARGE_MOVE_OFFSET_MIN, LARGE_MOVE_OFFSET_MAX)
                 actual_y += random.uniform(LARGE_MOVE_OFFSET_MIN, LARGE_MOVE_OFFSET_MAX)
             
-            # 偶尔加入停顿，模拟人类思考
-            if random.random() < THINK_PAUSE_PROBABILITY:  # 暂停概率
+            # 增加停顿概率，模拟人类思考
+            if random.random() < THINK_PAUSE_PROBABILITY:
                 self.small_move_steps.append((0, 0))  # 停顿一步
                 self.small_move_steps.append((int(actual_x), int(actual_y)))
             else:
@@ -265,8 +269,8 @@ def start_web_browsing():
     启动网页浏览模拟，更自然的人类行为
     """
     # 生成更小范围的目标位置，模拟真实网页浏览
-    target_x = random.randint(WEB_BROWSE_X_RANGE_MIN, WEB_BROWSE_X_RANGE_MAX)
-    target_y = random.randint(WEB_BROWSE_Y_RANGE_MIN, WEB_BROWSE_Y_RANGE_MAX)
+    target_x = random.randint(-WEB_BROWSE_X_RANGE_MAX, WEB_BROWSE_X_RANGE_MAX)
+    target_y = random.randint(-WEB_BROWSE_Y_RANGE_MAX, WEB_BROWSE_Y_RANGE_MAX)
     mouse_mover.quick_move_to_target(target_x, target_y)
     # 增加小范围移动次数，模拟更真实的阅读行为
     return {"target_x": target_x, "target_y": target_y, "small_moves_left": random.randint(WEB_BROWSE_SMALL_MOVES_MIN, WEB_BROWSE_SMALL_MOVES_MAX), "current_x": target_x, "current_y": target_y, "time_at_location": 0, "total_time_at_location": random.uniform(WEB_BROWSE_STAY_TIME_MIN, WEB_BROWSE_STAY_TIME_MAX)}
@@ -276,8 +280,8 @@ def start_page_scanning():
     启动页面扫描模拟，更自然的人类行为
     """
     # 从屏幕左侧开始，模拟真实页面扫描
-    start_x = random.randint(PAGE_SCAN_START_X_MIN, PAGE_SCAN_START_X_MAX)
-    start_y = random.randint(PAGE_SCAN_Y_RANGE_MIN, PAGE_SCAN_Y_RANGE_MAX)
+    start_x = random.randint(-PAGE_SCAN_START_X_MAX, -PAGE_SCAN_START_X_MIN)
+    start_y = random.randint(-PAGE_SCAN_Y_RANGE_MAX, PAGE_SCAN_Y_RANGE_MAX)
     mouse_mover.quick_move_to_target(start_x, start_y)
     # 移动到屏幕右侧，但随机化终点
     end_x = random.randint(PAGE_SCAN_END_X_MIN, PAGE_SCAN_END_X_MAX)
@@ -291,8 +295,8 @@ def start_exploratory_movement():
     """
     启动探索性移动模拟，更自然的人类行为
     """
-    target_x = random.randint(EXPLORATORY_MOVE_RANGE_MIN, EXPLORATORY_MOVE_RANGE_MAX)
-    target_y = random.randint(EXPLORATORY_MOVE_RANGE_MIN, EXPLORATORY_MOVE_RANGE_MAX)
+    target_x = random.randint(-EXPLORATORY_MOVE_RANGE_MAX, EXPLORATORY_MOVE_RANGE_MAX)
+    target_y = random.randint(-EXPLORATORY_MOVE_RANGE_MAX, EXPLORATORY_MOVE_RANGE_MAX)
     mouse_mover.quick_move_to_target(target_x, target_y)
     # 增加探索性移动次数，让人行为更自然
     return {"target_x": target_x, "target_y": target_y, "exploratory_moves_left": random.randint(EXPLORATORY_MOVES_LEFT_MIN, EXPLORATORY_MOVES_LEFT_MAX), "current_x": target_x, "current_y": target_y, "time_at_exploration": 0, "total_time_at_exploration": random.uniform(EXPLORATORY_STAY_TIME_MIN, EXPLORATORY_STAY_TIME_MAX)}
@@ -308,8 +312,8 @@ def update_web_browsing(state):
         return False  # 未完成
     elif state["small_moves_left"] > 0:
         # 开始下一个小范围移动，更小的范围以模拟真实的鼠标操作
-        small_move_x = random.randint(WEB_BROWSE_SMALL_MOVE_X_MIN, WEB_BROWSE_SMALL_MOVE_X_MAX)
-        small_move_y = random.randint(WEB_BROWSE_SMALL_MOVE_Y_MIN, WEB_BROWSE_SMALL_MOVE_Y_MAX)
+        small_move_x = random.randint(-WEB_BROWSE_SMALL_MOVE_X_MAX, WEB_BROWSE_SMALL_MOVE_X_MAX)
+        small_move_y = random.randint(-WEB_BROWSE_SMALL_MOVE_Y_MAX, WEB_BROWSE_SMALL_MOVE_Y_MAX)
         mouse_mover.smooth_move_small(state["current_x"], state["current_y"], state["current_x"] + small_move_x, state["current_y"] + small_move_y)
         state["current_x"] += small_move_x
         state["current_y"] += small_move_y
@@ -398,8 +402,8 @@ def start_random_movement():
     """
     启动随机移动模式，模拟人类随意移动鼠标的行为
     """
-    target_x = random.randint(RANDOM_MOVE_RANGE_MIN, RANDOM_MOVE_RANGE_MAX)
-    target_y = random.randint(RANDOM_MOVE_RANGE_MIN, RANDOM_MOVE_RANGE_MAX)
+    target_x = random.randint(-RANDOM_MOVE_RANGE_MAX, RANDOM_MOVE_RANGE_MAX)
+    target_y = random.randint(-RANDOM_MOVE_RANGE_MAX, RANDOM_MOVE_RANGE_MAX)
     mouse_mover.quick_move_to_target(target_x, target_y)
     return {
         "target_x": target_x, 
@@ -442,8 +446,8 @@ def start_circular_movement():
     """
     启动圆形移动模式，模拟鼠标沿圆形轨迹移动
     """
-    center_x = random.randint(CIRCLE_CENTER_RANGE_MIN, CIRCLE_CENTER_RANGE_MAX)
-    center_y = random.randint(CIRCLE_CENTER_RANGE_MIN, CIRCLE_CENTER_RANGE_MAX)
+    center_x = random.randint(-CIRCLE_CENTER_RANGE_MAX, CIRCLE_CENTER_RANGE_MAX)
+    center_y = random.randint(-CIRCLE_CENTER_RANGE_MAX, CIRCLE_CENTER_RANGE_MAX)
     radius = random.randint(CIRCLE_RADIUS_MIN, CIRCLE_RADIUS_MAX)
     start_angle = random.uniform(0, 2 * 3.14159)
     return {
@@ -485,9 +489,13 @@ def update_circular_movement(state):
         state["current_angle"] += state["angle_step"]
         state["steps_completed"] += 1
         
-        # 随机改变移动速度，模拟人类行为
-        if random.random() < CIRCLE_SPEED_CHANGE_PROBABILITY:  # 改变速度概率
-            state["angle_step"] = random.uniform(CIRCLE_NEW_ANGLE_STEP_MIN, CIRCLE_NEW_ANGLE_STEP_MAX)
+        # 大幅降低改变移动速度的概率，减小角速度变化幅度
+        if random.random() < CIRCLE_SPEED_CHANGE_PROBABILITY and state["steps_completed"] > 5:
+            # 减小角速度变化范围
+            change_factor = random.uniform(0.9, 1.1)  # 更小的变化范围
+            state["angle_step"] *= change_factor
+            # 确保角速度变化不会太大
+            state["angle_step"] = max(CIRCLE_NEW_ANGLE_STEP_MIN, min(CIRCLE_NEW_ANGLE_STEP_MAX, state["angle_step"]))
         
         return False  # 未完成
     elif state["time_at_location"] < state["total_time_at_location"]:
@@ -503,8 +511,8 @@ def start_target_focus():
     """
     启动目标聚焦模式，模拟用户专注于某个区域的行为
     """
-    center_x = random.randint(TARGET_FOCUS_RANGE_MIN, TARGET_FOCUS_RANGE_MAX)
-    center_y = random.randint(TARGET_FOCUS_RANGE_MIN, TARGET_FOCUS_RANGE_MAX)
+    center_x = random.randint(-TARGET_FOCUS_RANGE_MAX, TARGET_FOCUS_RANGE_MAX)
+    center_y = random.randint(-TARGET_FOCUS_RANGE_MAX, TARGET_FOCUS_RANGE_MAX)
     mouse_mover.quick_move_to_target(center_x, center_y)
     return {
         "center_x": center_x,
@@ -525,8 +533,8 @@ def update_target_focus(state):
         return False  # 未完成
     elif state["micro_movements_left"] > 0:
         # 在焦点区域内进行微小移动
-        micro_x = random.randint(TARGET_FOCUS_MICRO_MOVE_MIN, TARGET_FOCUS_MICRO_MOVE_MAX)
-        micro_y = random.randint(TARGET_FOCUS_MICRO_MOVE_MIN, TARGET_FOCUS_MICRO_MOVE_MAX)
+        micro_x = random.randint(-TARGET_FOCUS_MICRO_MOVE_MAX, TARGET_FOCUS_MICRO_MOVE_MAX)
+        micro_y = random.randint(-TARGET_FOCUS_MICRO_MOVE_MAX, TARGET_FOCUS_MICRO_MOVE_MAX)
         mouse.move(x=micro_x, y=micro_y)
         state["micro_movements_left"] -= 1
         return False  # 未完成
@@ -538,8 +546,8 @@ def update_target_focus(state):
         
         # 概率进行微小移动
         if random.random() < TARGET_FOCUS_ADDITIONAL_MOVE_PROBABILITY:
-            micro_x = random.randint(TARGET_FOCUS_ADDITIONAL_MOVE_MIN, TARGET_FOCUS_ADDITIONAL_MOVE_MAX)
-            micro_y = random.randint(TARGET_FOCUS_ADDITIONAL_MOVE_MIN, TARGET_FOCUS_ADDITIONAL_MOVE_MAX)
+            micro_x = random.randint(-TARGET_FOCUS_ADDITIONAL_MOVE_MAX, TARGET_FOCUS_ADDITIONAL_MOVE_MAX)
+            micro_y = random.randint(-TARGET_FOCUS_ADDITIONAL_MOVE_MAX, TARGET_FOCUS_ADDITIONAL_MOVE_MAX)
             mouse.move(x=micro_x, y=micro_y)
         
         return False  # 未完成
@@ -559,6 +567,10 @@ class MouseContext:
         self.breathing_active = False
         self.breathing_start_time = 0
         self.breathing_duration = 0
+        # 新增：记录上次移动时间，用于实现不规律的移动间隔
+        self.last_movement_time = time.monotonic()
+        # 新增：动态调整移动频率
+        self.movement_interval = random.uniform(0.5, 3.0)
 
 def update_led_for_mode(context, mode, is_active=True):
     """
