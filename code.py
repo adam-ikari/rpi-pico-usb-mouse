@@ -87,15 +87,12 @@ def _init_trig_lut():
 
 _perf_stats_global = None
 
-def fast_sin(angle_rad):
+def _fast_sin_impl(angle_rad):
     """
-    快速sin计算（查表法）
+    快速sin计算实现（查表法）
     angle_rad: 弧度值
     返回: sin值
     """
-    if _perf_stats_global:
-        _perf_stats_global.record_trig_call()
-    
     if not _SIN_LUT:
         _init_trig_lut()
     
@@ -103,21 +100,30 @@ def fast_sin(angle_rad):
     angle_deg = int((angle_rad * RAD_TO_DEG) % 360)
     return _SIN_LUT[angle_deg]
 
-def fast_cos(angle_rad):
+def fast_sin(angle_rad):
+    """快速sin计算（带性能统计）"""
+    if _perf_stats_global and _perf_stats_global.enable_stats:
+        _perf_stats_global.record_trig_call()
+    return _fast_sin_impl(angle_rad)
+
+def _fast_cos_impl(angle_rad):
     """
-    快速cos计算（查表法）
+    快速cos计算实现（查表法）
     angle_rad: 弧度值
     返回: cos值
     """
-    if _perf_stats_global:
-        _perf_stats_global.record_trig_call()
-    
     if not _COS_LUT:
         _init_trig_lut()
     
     # 将弧度转换为度数索引
     angle_deg = int((angle_rad * RAD_TO_DEG) % 360)
     return _COS_LUT[angle_deg]
+
+def fast_cos(angle_rad):
+    """快速cos计算（带性能统计）"""
+    if _perf_stats_global and _perf_stats_global.enable_stats:
+        _perf_stats_global.record_trig_call()
+    return _fast_cos_impl(angle_rad)
 
 # ==================== 算法辅助函数 ====================
 
@@ -169,13 +175,13 @@ def quadratic_bezier(t, p0, p1, p2):
     
     return p
 
-def calculate_bezier_point(step, total_steps, start_x, start_y, end_x, end_y, control_x, control_y, perf_stats=None):
+def calculate_bezier_point(step, total_steps, start_x, start_y, end_x, end_y, control_x, control_y):
     """
     函数式计算二次贝塞尔曲线上的单个点（零内存消耗，性能优化）
     根据当前步数实时计算，无需存储完整路径
     """
-    if perf_stats:
-        perf_stats.record_bezier_calc()
+    if _perf_stats_global and _perf_stats_global.enable_stats:
+        _perf_stats_global.record_bezier_calc()
     
     t = step / max(total_steps - 1, 1)
     x = quadratic_bezier(t, start_x, control_x, end_x)

@@ -150,3 +150,19 @@ class PerformanceStats:
         
         self.mem_free_start = gc.mem_free() if hasattr(gc, 'mem_free') else 0
         self.mem_free_min = self.mem_free_start
+    
+    def track_bezier(self, func):
+        """装饰器：统计贝塞尔计算调用"""
+        def wrapper(*args, **kwargs):
+            if self.enable_stats:
+                self.record_bezier_calc()
+            return func(*args, **kwargs)
+        return wrapper
+    
+    def track_trig(self, func):
+        """装饰器：统计三角函数调用"""
+        def wrapper(*args, **kwargs):
+            if self.enable_stats:
+                self.record_trig_call()
+            return func(*args, **kwargs)
+        return wrapper
