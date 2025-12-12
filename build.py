@@ -115,12 +115,84 @@ class BuildTool:
         print("✅ 依赖检查通过\n")
         return True
     
-    def build(self):
+    def compress_code(self, src_path, dst_path):
+        """压缩 Python 代码：移除注释和多余空行"""
+        with open(src_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        compressed_lines = []
+        in_docstring = False
+        docstring_char = None
+        
+        for line in lines:
+            stripped = line.strip()
+            
+            # 检测文档字符串
+            if '"""' in stripped or "'''" in stripped:
+                if not in_docstring:
+                    docstring_char = '"""' if '"""' in stripped else "'''"
+                    in_docstring = True
+                    compressed_lines.append(line)
+                    if stripped.count(docstring_char) >= 2:
+                        in_docstring = False
+                    continue
+                else:
+                    compressed_lines.append(line)
+                    if docstring_char in stripped:
+                        in_docstring = False
+                    continue
+            
+            # 在文档字符串内，保留原样
+            if in_docstring:
+                compressed_lines.append(line)
+                continue
+            
+            # 跳过空行和纯注释行
+            if not stripped or stripped.startswith('#'):
+                continue
+            
+            # 移除行尾注释（保留字符串中的 #）
+            in_string = False
+            string_char = None
+            clean_line = []
+            i = 0
+            while i < len(line):
+                char = line[i]
+                
+                # 处理字符串
+                if char in ('"', "'") and (i == 0 or line[i-1] != '\\'):
+                    if not in_string:
+                        in_string = True
+                        string_char = char
+                    elif char == string_char:
+                        in_string = False
+                        string_char = None
+                
+                # 移除注释（不在字符串内）
+                if char == '#' and not in_string:
+                    break
+                
+                clean_line.append(char)
+                i += 1
+            
+            result = ''.join(clean_line).rstrip()
+            if result:
+                compressed_lines.append(result + '\n')
+        
+        with open(dst_path, 'w', encoding='utf-8') as f:
+            f.writelines(compressed_lines)
+    
+    def build(self, compress=False):
         """构建项目"""
         print("🔨 构建项目...")
+        if compress:
+            print("  📦 启用代码压缩")
         
         self.build_dir.mkdir(exist_ok=True)
         self.dist_dir.mkdir(exist_ok=True)
+        
+        total_original_size = 0
+        total_compressed_size = 0
         
         for file in self.source_files:
             src = self.project_root / file
@@ -129,14 +201,28 @@ class BuildTool:
                 continue
             
             dst = self.dist_dir / file
-            shutil.copy2(src, dst)
-            print(f"  ✓ 复制 {file}")
+            
+            if compress:
+                original_size = src.stat().st_size
+                self.compress_code(src, dst)
+                compressed_size = dst.stat().st_size
+                total_original_size += original_size
+                total_compressed_size += compressed_size
+                reduction = (1 - compressed_size / original_size) * 100
+                print(f"  ✓ 压缩 {file} ({original_size}B → {compressed_size}B, -{reduction:.1f}%)")
+            else:
+                shutil.copy2(src, dst)
+                print(f"  ✓ 复制 {file}")
         
         lib_src = self.project_root / self.lib_dir
         lib_dst = self.dist_dir / self.lib_dir
         if lib_src.exists():
             shutil.copytree(lib_src, lib_dst, dirs_exist_ok=True)
             print(f"  ✓ 复制 {self.lib_dir}/")
+        
+        if compress and total_original_size > 0:
+            total_reduction = (1 - total_compressed_size / total_original_size) * 100
+            print(f"\n  📊 总计: {total_original_size}B → {total_compressed_size}B (-{total_reduction:.1f}%)")
         
         print(f"✅ 构建完成: {self.dist_dir}\n")
         return True
@@ -185,7 +271,7 @@ def main():
     tool = BuildTool()
     
     if len(sys.argv) < 2:
-        print("用法: python3 build.py [命令]")
+        print("用法: python3 build.py [命令] [选项]")
         print("\n可用命令:")
         print("  clean    - 清理构建目录")
         print("  check    - 检查语法和依赖")
@@ -193,9 +279,12 @@ def main():
         print("  package  - 打包为 ZIP")
         print("  all      - 执行完整构建流程")
         print("  info     - 显示项目信息")
+        print("\n选项:")
+        print("  --compress  - 压缩代码（移除注释和空行）")
         sys.exit(1)
     
     command = sys.argv[1]
+    compress = "--compress" in sys.argv
     
     if command == "clean":
         tool.clean()
@@ -213,7 +302,7 @@ def main():
             sys.exit(1)
         if not tool.check_dependencies():
             sys.exit(1)
-        if not tool.build():
+        if not tool.build(compress=compress):
             sys.exit(1)
     
     elif command == "package":
@@ -222,7 +311,7 @@ def main():
             sys.exit(1)
         if not tool.check_dependencies():
             sys.exit(1)
-        if not tool.build():
+        if not tool.build(compress=compress):
             sys.exit(1)
         tool.package()
     
@@ -233,7 +322,7 @@ def main():
             sys.exit(1)
         if not tool.check_dependencies():
             sys.exit(1)
-        if not tool.build():
+        if not tool.build(compress=compress):
             sys.exit(1)
         tool.package()
         print("🎉 完整构建流程执行成功!")
