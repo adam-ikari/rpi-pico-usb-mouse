@@ -6,7 +6,9 @@ import usb_cdc
 import usb_hid
 import usb_midi
 
-# 禁用USB CDC
+# 串口控制（默认禁用，需要修改此行以启用调试功能）
+# 如需启用串口进行调试和性能统计，请取消下一行注释并注释掉 usb_cdc.disable()
+# usb_cdc.enable(console=True, data=False)
 usb_cdc.disable()
 
 # 禁用USB MIDI
