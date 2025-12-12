@@ -182,11 +182,33 @@ class BuildTool:
         with open(dst_path, 'w', encoding='utf-8') as f:
             f.writelines(compressed_lines)
     
-    def build(self, compress=False):
+    def compile_to_mpy(self, src_path, dst_path):
+        """使用 mpy-cross 编译为 .mpy 文件"""
+        try:
+            result = subprocess.run(
+                ["mpy-cross", str(src_path), "-o", str(dst_path)],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                return True
+            else:
+                print(f"    ⚠️  mpy-cross 错误: {result.stderr}")
+                return False
+        except FileNotFoundError:
+            print(f"    ⚠️  未找到 mpy-cross，请安装: pip install mpy-cross")
+            return False
+        except Exception as e:
+            print(f"    ⚠️  编译失败: {e}")
+            return False
+    
+    def build(self, compress=False, mpy=False):
         """构建项目"""
         print("🔨 构建项目...")
         if compress:
             print("  📦 启用代码压缩")
+        if mpy:
+            print("  ⚙️  启用 .mpy 编译")
         
         self.build_dir.mkdir(exist_ok=True)
         self.dist_dir.mkdir(exist_ok=True)
@@ -200,19 +222,55 @@ class BuildTool:
                 print(f"  ⚠️  跳过不存在的文件: {file}")
                 continue
             
-            dst = self.dist_dir / file
-            
-            if compress:
-                original_size = src.stat().st_size
-                self.compress_code(src, dst)
-                compressed_size = dst.stat().st_size
-                total_original_size += original_size
-                total_compressed_size += compressed_size
-                reduction = (1 - compressed_size / original_size) * 100
-                print(f"  ✓ 压缩 {file} ({original_size}B → {compressed_size}B, -{reduction:.1f}%)")
+            if mpy:
+                # 编译为 .mpy
+                mpy_file = file.replace('.py', '.mpy')
+                dst = self.dist_dir / mpy_file
+                
+                # 如果启用压缩，先压缩再编译
+                if compress:
+                    temp_py = self.build_dir / file
+                    original_size = src.stat().st_size
+                    self.compress_code(src, temp_py)
+                    compressed_size = temp_py.stat().st_size
+                    
+                    if self.compile_to_mpy(temp_py, dst):
+                        mpy_size = dst.stat().st_size
+                        total_original_size += original_size
+                        total_compressed_size += mpy_size
+                        reduction = (1 - mpy_size / original_size) * 100
+                        print(f"  ✓ 编译 {file} → {mpy_file} ({original_size}B → {mpy_size}B, -{reduction:.1f}%)")
+                    else:
+                        # 编译失败，回退到复制 .py
+                        shutil.copy2(src, self.dist_dir / file)
+                        print(f"  ✓ 回退复制 {file}")
+                else:
+                    original_size = src.stat().st_size
+                    if self.compile_to_mpy(src, dst):
+                        mpy_size = dst.stat().st_size
+                        total_original_size += original_size
+                        total_compressed_size += mpy_size
+                        reduction = (1 - mpy_size / original_size) * 100
+                        print(f"  ✓ 编译 {file} → {mpy_file} ({original_size}B → {mpy_size}B, -{reduction:.1f}%)")
+                    else:
+                        # 编译失败，回退到复制 .py
+                        shutil.copy2(src, self.dist_dir / file)
+                        print(f"  ✓ 回退复制 {file}")
             else:
-                shutil.copy2(src, dst)
-                print(f"  ✓ 复制 {file}")
+                # 普通构建
+                dst = self.dist_dir / file
+                
+                if compress:
+                    original_size = src.stat().st_size
+                    self.compress_code(src, dst)
+                    compressed_size = dst.stat().st_size
+                    total_original_size += original_size
+                    total_compressed_size += compressed_size
+                    reduction = (1 - compressed_size / original_size) * 100
+                    print(f"  ✓ 压缩 {file} ({original_size}B → {compressed_size}B, -{reduction:.1f}%)")
+                else:
+                    shutil.copy2(src, dst)
+                    print(f"  ✓ 复制 {file}")
         
         lib_src = self.project_root / self.lib_dir
         lib_dst = self.dist_dir / self.lib_dir
@@ -220,7 +278,7 @@ class BuildTool:
             shutil.copytree(lib_src, lib_dst, dirs_exist_ok=True)
             print(f"  ✓ 复制 {self.lib_dir}/")
         
-        if compress and total_original_size > 0:
+        if (compress or mpy) and total_original_size > 0:
             total_reduction = (1 - total_compressed_size / total_original_size) * 100
             print(f"\n  📊 总计: {total_original_size}B → {total_compressed_size}B (-{total_reduction:.1f}%)")
         
@@ -281,10 +339,14 @@ def main():
         print("  info     - 显示项目信息")
         print("\n选项:")
         print("  --compress  - 压缩代码（移除注释和空行）")
+        print("  --mpy       - 编译为 .mpy 字节码文件")
+        print("\n示例:")
+        print("  python3 build.py build --compress --mpy")
         sys.exit(1)
     
     command = sys.argv[1]
     compress = "--compress" in sys.argv
+    mpy = "--mpy" in sys.argv
     
     if command == "clean":
         tool.clean()
@@ -302,7 +364,7 @@ def main():
             sys.exit(1)
         if not tool.check_dependencies():
             sys.exit(1)
-        if not tool.build(compress=compress):
+        if not tool.build(compress=compress, mpy=mpy):
             sys.exit(1)
     
     elif command == "package":
@@ -311,7 +373,7 @@ def main():
             sys.exit(1)
         if not tool.check_dependencies():
             sys.exit(1)
-        if not tool.build(compress=compress):
+        if not tool.build(compress=compress, mpy=mpy):
             sys.exit(1)
         tool.package()
     
@@ -322,7 +384,7 @@ def main():
             sys.exit(1)
         if not tool.check_dependencies():
             sys.exit(1)
-        if not tool.build(compress=compress):
+        if not tool.build(compress=compress, mpy=mpy):
             sys.exit(1)
         tool.package()
         print("🎉 完整构建流程执行成功!")
