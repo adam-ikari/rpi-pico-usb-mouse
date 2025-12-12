@@ -6,8 +6,8 @@ import usb_cdc
 import usb_hid
 import usb_midi
 
-# 禁用USB CDC
-usb_cdc.disable()
+# 启用USB CDC（串口）用于调试和统计
+usb_cdc.enable(console=True, data=False)
 
 # 禁用USB MIDI
 usb_midi.disable()

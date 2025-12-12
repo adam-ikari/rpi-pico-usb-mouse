@@ -8,6 +8,7 @@ import neopixel
 from pin_config import LED_PIN
 from constants import *
 from performance_stats import PerformanceStats
+from serial_control import SerialControl
 
 # 数学常量
 PI = 3.141592653589793
@@ -407,9 +408,17 @@ def init_context():
     global _perf_stats_global
     perf_stats = PerformanceStats(enable_stats=ENABLE_PERFORMANCE_STATS)
     _perf_stats_global = perf_stats
+    serial_control = SerialControl(perf_stats=perf_stats)
     context = MouseContext()
     context.perf_stats = perf_stats
+    context.serial_control = serial_control
     check_and_start_next_mode(context)
+    
+    if serial_control.serial_available:
+        print("=== Mouse Movement Simulator ===")
+        print("Serial control enabled. Type 'help' for commands.")
+        print("================================")
+    
     return context
 
 # 非阻塞模拟函数
@@ -934,6 +943,9 @@ def main():
 
         while True:
             current_time = time.monotonic()
+            
+            if hasattr(context, 'serial_control'):
+                context.serial_control.check_commands()
             
             # 限制更新频率，避免过度占用CPU
             if current_time - last_update_time >= UPDATE_INTERVAL:  # 每8ms更新一次（125Hz，匹配USB HID回报率）
