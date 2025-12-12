@@ -24,7 +24,11 @@ MODE_DURATION_MIN = 30
 MODE_DURATION_MAX = 120
 
 # 更新间隔 (秒)
-UPDATE_INTERVAL = 0.01
+# USB HID 回报率说明：
+# - CircuitPython 默认: 125Hz (8ms) ← 当前使用
+# - 可选优化: 250Hz (4ms), 500Hz (2ms), 1000Hz (1ms)
+# 注意：提高回报率需要修改 USB 描述符，且会增加 CPU 负载
+UPDATE_INTERVAL = 0.008  # 8ms = 125Hz（匹配 USB HID 默认回报率）
 
 # 鼠标移动基础参数
 BASE_STEP_DISTANCE = 15
