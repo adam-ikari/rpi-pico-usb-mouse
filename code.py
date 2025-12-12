@@ -936,7 +936,7 @@ def main():
             current_time = time.monotonic()
             
             # 限制更新频率，避免过度占用CPU
-            if current_time - last_update_time >= UPDATE_INTERVAL:  # 每10ms更新一次
+            if current_time - last_update_time >= UPDATE_INTERVAL:  # 每8ms更新一次（125Hz，匹配USB HID回报率）
                 last_update_time = current_time
                 
                 # 更新呼吸灯效果
