@@ -7,6 +7,7 @@ import board
 import neopixel
 from pin_config import LED_PIN
 from constants import *
+from performance_stats import PerformanceStats
 
 # 数学常量
 PI = 3.141592653589793
@@ -83,12 +84,17 @@ def _init_trig_lut():
             _SIN_LUT.append(math.sin(angle_rad))
             _COS_LUT.append(math.cos(angle_rad))
 
+_perf_stats_global = None
+
 def fast_sin(angle_rad):
     """
     快速sin计算（查表法）
     angle_rad: 弧度值
     返回: sin值
     """
+    if _perf_stats_global:
+        _perf_stats_global.record_trig_call()
+    
     if not _SIN_LUT:
         _init_trig_lut()
     
@@ -102,6 +108,9 @@ def fast_cos(angle_rad):
     angle_rad: 弧度值
     返回: cos值
     """
+    if _perf_stats_global:
+        _perf_stats_global.record_trig_call()
+    
     if not _COS_LUT:
         _init_trig_lut()
     
@@ -159,11 +168,14 @@ def quadratic_bezier(t, p0, p1, p2):
     
     return p
 
-def calculate_bezier_point(step, total_steps, start_x, start_y, end_x, end_y, control_x, control_y):
+def calculate_bezier_point(step, total_steps, start_x, start_y, end_x, end_y, control_x, control_y, perf_stats=None):
     """
     函数式计算二次贝塞尔曲线上的单个点（零内存消耗，性能优化）
     根据当前步数实时计算，无需存储完整路径
     """
+    if perf_stats:
+        perf_stats.record_bezier_calc()
+    
     t = step / max(total_steps - 1, 1)
     x = quadratic_bezier(t, start_x, control_x, end_x)
     y = quadratic_bezier(t, start_y, control_y, end_y)
@@ -392,7 +404,11 @@ def init_context():
     """
     初始化上下文并启动第一个模式
     """
+    global _perf_stats_global
+    perf_stats = PerformanceStats(enable_stats=ENABLE_PERFORMANCE_STATS)
+    _perf_stats_global = perf_stats
     context = MouseContext()
+    context.perf_stats = perf_stats
     check_and_start_next_mode(context)
     return context
 
@@ -479,7 +495,8 @@ def update_web_browsing(state):
             state["target_x"],
             state["target_y"],
             state["control_x"],
-            state["control_y"]
+            state["control_y"],
+            perf_stats=_perf_stats_global
         )
         
         noise_x, noise_y = perlin_noise_2d(current_time - state["time_offset"], 0, 2.0)
@@ -799,6 +816,9 @@ def update_led_for_mode(context, mode, is_active=True):
     """
     context.current_mode = mode
     
+    if hasattr(context, 'perf_stats'):
+        context.perf_stats.record_mode_switch(mode)
+    
     if is_active:
         if mode == "web_browsing":
             context.led_mode_color = WEB_BROWSING_COLOR
@@ -918,6 +938,13 @@ def main():
             # 限制更新频率，避免过度占用CPU
             if current_time - last_update_time >= UPDATE_INTERVAL:  # 每8ms更新一次（125Hz，匹配USB HID回报率）
                 last_update_time = current_time
+                
+                if hasattr(context, 'perf_stats'):
+                    context.perf_stats.record_loop()
+                    context.perf_stats.update_memory_stats()
+                    
+                    if context.perf_stats.should_report(PERFORMANCE_REPORT_INTERVAL):
+                        context.perf_stats.print_report()
                 
                 # 更新呼吸灯效果
                 if not context.breathing_active and context.current_mode:
