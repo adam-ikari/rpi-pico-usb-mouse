@@ -21,24 +21,52 @@ pixel_pin = LED_PIN
 num_pixels = NUM_PIXELS
 pixels = neopixel.NeoPixel(pixel_pin, num_pixels, brightness=DEFAULT_BRIGHTNESS, auto_write=True)
 
-# 定义不同模式的颜色
-WEB_BROWSING_COLOR = WEB_BROWSING_COLOR    # 红色 - 网页浏览
-PAGE_SCANNING_COLOR = PAGE_SCANNING_COLOR   # 绿色 - 页面扫描
-EXPLORATORY_COLOR = EXPLORATORY_COLOR   # 蓝色 - 探索性移动
-RANDOM_MOVEMENT_COLOR = RANDOM_MOVEMENT_COLOR  # 黄色 - 随机移动
-CIRCULAR_MOVEMENT_COLOR = CIRCULAR_MOVEMENT_COLOR  # 紫色 - 圆形移动
-TARGET_FOCUS_COLOR = TARGET_FOCUS_COLOR    # 青色 - 目标聚焦
+# 颜色和亮度常量已从 constants.py 导入，无需重复定义
 
-# 呼吸灯相关参数
-BREATHE_MIN_BRIGHTNESS = BREATHE_MIN_BRIGHTNESS  # 最小亮度，确保LED不会完全熄灭
-BREATHE_MAX_BRIGHTNESS = BREATHE_MAX_BRIGHTNESS   # 最大亮度
-
-# 事件循环相关变量
-last_time = time.monotonic()
-current_brightness = BREATHE_MAX_BRIGHTNESS
-brightness_direction = -0.01  # 亮度变化方向
-transition_start_time = None
-transition_duration = 0
+# LED 控制器类（封装全局变量）
+class LEDController:
+    """LED 呼吸灯和颜色控制器"""
+    def __init__(self, pixels):
+        self.pixels = pixels
+        self.last_time = time.monotonic()
+        self.current_brightness = BREATHE_MAX_BRIGHTNESS
+        self.brightness_direction = -0.01
+        self.transition_start_time = None
+        self.transition_duration = 0
+    
+    def set_color_with_brightness(self, color, brightness):
+        """设置LED颜色和亮度"""
+        self.pixels.brightness = brightness
+        self.pixels.fill(color)
+        self.pixels.show()
+    
+    def update_breathing(self, color):
+        """非阻塞更新呼吸灯效果"""
+        current_time = time.monotonic()
+        time_delta = min(current_time - self.last_time, TRANSITION_TIME_DELTA_LIMIT)
+        self.last_time = current_time
+        
+        self.current_brightness += self.brightness_direction * (time_delta / BRIGHTNESS_CHANGE_SPEED_FACTOR)
+        
+        if self.current_brightness >= BREATHE_MAX_BRIGHTNESS:
+            self.current_brightness = BREATHE_MAX_BRIGHTNESS
+            self.brightness_direction = -abs(self.brightness_direction)
+        elif self.current_brightness <= BREATHE_MIN_BRIGHTNESS:
+            self.current_brightness = BREATHE_MIN_BRIGHTNESS
+            self.brightness_direction = abs(self.brightness_direction)
+        
+        self.set_color_with_brightness(color, self.current_brightness)
+    
+    def start_transition(self, duration):
+        """启动过渡计时器"""
+        self.transition_start_time = time.monotonic()
+        self.transition_duration = duration
+    
+    def is_transition_complete(self):
+        """检查过渡是否完成"""
+        if self.transition_start_time is None:
+            return True
+        return time.monotonic() - self.transition_start_time >= self.transition_duration
 
 # ==================== 三角函数加速（查表法）====================
 
@@ -185,55 +213,6 @@ def apply_gravity_pull(current_x, current_y, target_x, target_y, strength=0.1):
     return 0, 0
 
 # ==================== LED 控制函数 ====================
-
-def set_led_color_with_brightness(color, brightness):
-    """
-    设置LED颜色和亮度
-    """
-    pixels.brightness = brightness
-    pixels.fill(color)
-    pixels.show()
-
-def update_breathing_led(color):
-    """
-    非阻塞更新呼吸灯效果
-    """
-    global current_brightness, brightness_direction, last_time
-    
-    current_time = time.monotonic()
-    # 使用较小的时间增量以获得更平滑的效果
-    time_delta = min(current_time - last_time, TRANSITION_TIME_DELTA_LIMIT)  # 限制时间增量以避免大的跳跃
-    last_time = current_time
-    
-    # 更新亮度
-    current_brightness += brightness_direction * (time_delta / BRIGHTNESS_CHANGE_SPEED_FACTOR)  # 调整变化速度
-    
-    # 反转方向如果达到边界
-    if current_brightness >= BREATHE_MAX_BRIGHTNESS:
-        current_brightness = BREATHE_MAX_BRIGHTNESS
-        brightness_direction = -abs(brightness_direction)
-    elif current_brightness <= BREATHE_MIN_BRIGHTNESS:
-        current_brightness = BREATHE_MIN_BRIGHTNESS
-        brightness_direction = abs(brightness_direction)
-    
-    set_led_color_with_brightness(color, current_brightness)
-
-def start_transition_timer(duration):
-    """
-    启动过渡计时器
-    """
-    global transition_start_time, transition_duration
-    transition_start_time = time.monotonic()
-    transition_duration = duration
-
-def is_transition_complete():
-    """
-    检查过渡是否完成
-    """
-    global transition_start_time, transition_duration
-    if transition_start_time is None:
-        return True
-    return time.monotonic() - transition_start_time >= transition_duration
 
 # 鼠标移动状态类，用于非阻塞操作
 class MouseMover:
@@ -405,8 +384,9 @@ class MouseMover:
                 self.active = False
                 return True  # 完成
 
-# 创建鼠标移动器实例
+# 创建鼠标移动器和 LED 控制器实例
 mouse_mover = MouseMover()
+led_controller = LEDController(pixels)
 
 def init_context():
     """
@@ -833,10 +813,10 @@ def update_led_for_mode(context, mode, is_active=True):
         elif mode == "target_focus":
             context.led_mode_color = TARGET_FOCUS_COLOR
         # 设置为正常亮度
-        set_led_color_with_brightness(context.led_mode_color, BREATHE_MAX_BRIGHTNESS)
+        led_controller.set_color_with_brightness(context.led_mode_color, BREATHE_MAX_BRIGHTNESS)
     else:
         # 设置为低亮度
-        set_led_color_with_brightness(context.led_mode_color, BREATHE_MIN_BRIGHTNESS)
+        led_controller.set_color_with_brightness(context.led_mode_color, BREATHE_MIN_BRIGHTNESS)
 
 def start_breathing_led(context, duration=1.0):
     """
@@ -851,7 +831,7 @@ def update_breathing_led_task(context):
     更新呼吸灯任务
     """
     if context.breathing_active:
-        update_breathing_led(context.led_mode_color)
+        led_controller.update_breathing(context.led_mode_color)
         if time.monotonic() - context.breathing_start_time >= context.breathing_duration:
             context.breathing_active = False
 
@@ -941,7 +921,7 @@ def main():
                 
                 # 更新呼吸灯效果
                 if not context.breathing_active and context.current_mode:
-                    update_breathing_led(context.led_mode_color)
+                    led_controller.update_breathing(context.led_mode_color)
                 
                 # 根据当前模式更新模拟状态（优化后的统一处理）
                 if context.current_mode and context.current_state:
