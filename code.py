@@ -510,8 +510,7 @@ def update_web_browsing(state):
             state["target_x"],
             state["target_y"],
             state["control_x"],
-            state["control_y"],
-            perf_stats=_perf_stats_global
+            state["control_y"]
         )
         
         noise_x, noise_y = perlin_noise_2d(current_time - state["time_offset"], 0, 2.0)
