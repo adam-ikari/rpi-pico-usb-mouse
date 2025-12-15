@@ -39,6 +39,10 @@ class PIDController:
         self.noise_angle = 0      # 噪声方向（弧度）
         self.noise_magnitude = 0  # 噪声幅度
         
+        # 缓存噪声向量分量（避免每帧重复计算 sin/cos）
+        self.noise_x_cached = 0
+        self.noise_y_cached = 0
+        
         self.pending_correction_x = 0
         self.pending_correction_y = 0
     
@@ -100,20 +104,20 @@ class PIDController:
             p_term = (error_distance * self.kp * self.overshoot_damping) // 10000
             correction_distance = p_term
         
-        # 4. 添加向量噪声
+        # 4. 添加向量噪声（仅在更新时计算 sin/cos）
         if current_time - self.noise_time > (PID_NOISE_FREQUENCY / 1000.0):
             # 随机噪声方向和幅度
             self.noise_angle = random_pool.uniform(-314, 314) / 100  # -π 到 π
             self.noise_magnitude = random_pool.randint(-PID_NOISE_AMPLITUDE, PID_NOISE_AMPLITUDE)
             self.noise_time = current_time
+            
+            # 计算并缓存噪声向量分量
+            self.noise_x_cached = int(self._fast_cos(self.noise_angle) * self.noise_magnitude)
+            self.noise_y_cached = int(self._fast_sin(self.noise_angle) * self.noise_magnitude)
         
-        # 噪声向量分量
-        noise_x = int(self._fast_cos(self.noise_angle) * self.noise_magnitude)
-        noise_y = int(self._fast_sin(self.noise_angle) * self.noise_magnitude)
-        
-        # 5. 沿误差方向分解修正量
-        correction_x = (correction_distance * direction_x) // 100 + noise_x
-        correction_y = (correction_distance * direction_y) // 100 + noise_y
+        # 5. 沿误差方向分解修正量（使用缓存的噪声值）
+        correction_x = (correction_distance * direction_x) // 100 + self.noise_x_cached
+        correction_y = (correction_distance * direction_y) // 100 + self.noise_y_cached
         
         # 更新历史
         self.last_error_distance = error_distance
