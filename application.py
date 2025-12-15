@@ -70,34 +70,29 @@ class MouseSimulatorApp:
         print("Starting mouse movement simulation...")
         print("================================")
     
-    def start_next_mode(self, mode_name=None):
+    def start_next_mode(self, mode_name=None, use_transition=False):
         """启动下一个模式"""
-        # 如果没有指定模式，则随机选择
         if mode_name is None:
             mode_name = weighted_mode_selector.choice()
         
-        # 输出模式切换日志
         print(f"[Mode] Starting: {mode_name}")
         
-        # 设置LED为活动模式（恒定亮度）
         self.led_controller.set_mode('active')
         self.context.led_mode_color = self.led_controller.set_next_color(mode_name)
         self.context.current_mode = mode_name
         
-        # 创建模式实例
         self.current_mode_instance = ModeFactory.create_mode(
             mode_name, 
             self.mouse_mover, 
             self.perf_stats
         )
         
-        # 启动模式
         self.context.current_state = self.current_mode_instance.start()
         
         self.context.mode_start_time = time.monotonic()
-        self.context.mode_duration = random_pool.uniform(MODE_DURATION_MIN, MODE_DURATION_MAX)
+        duration_min, duration_max = self.current_mode_instance.get_duration_range()
+        self.context.mode_duration = random_pool.uniform(duration_min, duration_max)
         
-        # 重置等待时间
         self.context.post_mode_wait_time = 0
     
     def update(self):
@@ -119,23 +114,39 @@ class MouseSimulatorApp:
         # 更新当前模式
         if self.context.current_mode and self.context.current_state and self.current_mode_instance:
             if self.current_mode_instance.update(self.context.current_state):
-                # 模式完成，设置等待时间并预告下一个模式
-                self.context.post_mode_wait_time = current_time
-                
+                # 模式完成，决定是否等待
                 wait_min, wait_max = self.current_mode_instance.get_wait_time_range()
-                self.context.post_mode_wait_duration = random_pool.uniform(wait_min, wait_max)
                 
-                # 立即选择下一个模式（但不启动颜色过渡）
-                next_mode_name = weighted_mode_selector.choice()
-                self.context.next_mode = next_mode_name
-                self.context.color_transition_started = False  # 标记颜色过渡未开始
-                print(f"[Mode] Next: {next_mode_name} (waiting {self.context.post_mode_wait_duration:.1f}s)")
+                # 30% 概率使用零等待（连续切换）
+                use_zero_wait = random_pool.random() < (ZERO_WAIT_PROBABILITY / 100) if ALLOW_ZERO_WAIT else False
                 
-                # 设置LED为停顿模式（呼吸灯）
-                self.led_controller.set_mode('idle')
-                
-                self.context.current_mode = None
-                self.current_mode_instance = None
+                if use_zero_wait:
+                    # 零等待：立即切换到下一个模式
+                    next_mode_name = weighted_mode_selector.choice()
+                    print(f"[Mode] Continuous switch -> {next_mode_name}")
+                    
+                    # 立即启动颜色过渡
+                    self.led_controller.set_next_color(next_mode_name)
+                    
+                    self.context.current_mode = None
+                    self.current_mode_instance = None
+                    
+                    # 直接启动下一个模式
+                    self.start_next_mode(next_mode_name, use_transition=True)
+                else:
+                    # 正常等待
+                    self.context.post_mode_wait_time = current_time
+                    self.context.post_mode_wait_duration = random_pool.uniform(wait_min, wait_max)
+                    
+                    next_mode_name = weighted_mode_selector.choice()
+                    self.context.next_mode = next_mode_name
+                    self.context.color_transition_started = False
+                    print(f"[Mode] Next: {next_mode_name} (waiting {self.context.post_mode_wait_duration:.1f}s)")
+                    
+                    self.led_controller.set_mode('idle')
+                    
+                    self.context.current_mode = None
+                    self.current_mode_instance = None
         
         # 在停顿时间过半时启动颜色过渡
         if (self.context.current_mode is None and 
@@ -144,7 +155,6 @@ class MouseSimulatorApp:
             self.context.post_mode_wait_time > 0):
             elapsed = current_time - self.context.post_mode_wait_time
             if elapsed >= self.context.post_mode_wait_duration / 2:
-                # 启动颜色过渡
                 self.led_controller.set_next_color(self.context.next_mode)
                 self.context.color_transition_started = True
                 print(f"[LED] Color transition started -> {self.context.next_mode}")
@@ -154,10 +164,8 @@ class MouseSimulatorApp:
             hasattr(self.context, 'next_mode') and
             self.context.post_mode_wait_time > 0 and
             current_time - self.context.post_mode_wait_time >= self.context.post_mode_wait_duration):
-            # 启动之前预告的模式
-            self.start_next_mode(self.context.next_mode)
+            self.start_next_mode(self.context.next_mode, use_transition=True)
             delattr(self.context, 'next_mode')
-            # 启动短暂的呼吸灯效果以示活跃
             self.start_breathing_led(0.5)
         
         # 更新呼吸灯任务（如果活动）

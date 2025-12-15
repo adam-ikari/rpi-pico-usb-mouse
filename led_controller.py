@@ -88,12 +88,12 @@ class LEDController:
                 # 过渡完成
                 self.brightness_transition_active = False
                 self.current_brightness_int = self.brightness_target
-                brightness = self.brightness_target / 100
+                brightness = self.brightness_target * 0.01
             else:
                 # 计算过渡进度（线性插值）
                 t = elapsed / self.brightness_transition_duration
                 self.current_brightness_int = int(self.brightness_start + (self.brightness_target - self.brightness_start) * t)
-                brightness = self.current_brightness_int / 100
+                brightness = self.current_brightness_int * 0.01
         elif self.led_mode == 'active':
             # 活动模式：恒定最大亮度
             brightness = BREATHE_MAX_BRIGHTNESS
@@ -109,12 +109,25 @@ class LEDController:
                 self.current_brightness_int = 10
                 self.brightness_direction = 1
             
-            brightness = self.current_brightness_int / 100
+            brightness = self.current_brightness_int * 0.01
         
-        # 3. 应用到LED
-        self.pixels.brightness = brightness
-        self.pixels.fill(display_color)
-        self.pixels.show()
+        # 3. 应用到LED（仅在变化时更新）
+        needs_update = False
+        
+        # 检查亮度变化
+        if abs(self.pixels.brightness - brightness) > 0.01:
+            self.pixels.brightness = brightness
+            needs_update = True
+        
+        # 检查颜色变化
+        if display_color != getattr(self, '_last_color', None):
+            self.pixels.fill(display_color)
+            self._last_color = display_color
+            needs_update = True
+        
+        # 仅在有变化时更新硬件
+        if needs_update:
+            self.pixels.show()
     
 
     
