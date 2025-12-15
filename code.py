@@ -10,6 +10,8 @@ from constants import *
 from performance_stats import PerformanceStats
 from serial_control import SerialControl
 
+ENABLE_PERFORMANCE_STATS = False
+
 # 数学常量
 PI = 3.141592653589793
 DEG_TO_RAD = PI / 180.0  # 角度转弧度
