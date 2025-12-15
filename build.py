@@ -4,6 +4,7 @@
 
 import os
 import re
+import shutil
 from pathlib import Path
 
 
@@ -179,6 +180,26 @@ if __name__ == "__main__":
     project_root = Path(__file__).parent
     src_dir = project_root / "src"
     entry_file = src_dir / "main.py"
-    output_file = project_root / "dist" / "code.py"
+    dist_dir = project_root / "dist"
+    output_file = dist_dir / "code.py"
     
+    # 打包 Python 代码
     build_single_file(src_dir, entry_file, output_file)
+    
+    # 复制 boot.py
+    boot_src = project_root / "boot.py"
+    boot_dst = dist_dir / "boot.py"
+    if boot_src.exists():
+        shutil.copy2(boot_src, boot_dst)
+        print(f"✅ 已复制: boot.py")
+    
+    # 复制 lib 文件夹
+    lib_src = project_root / "lib"
+    lib_dst = dist_dir / "lib"
+    if lib_src.exists():
+        if lib_dst.exists():
+            shutil.rmtree(lib_dst)
+        shutil.copytree(lib_src, lib_dst)
+        print(f"✅ 已复制: lib/ 文件夹")
+    
+    print(f"\n📦 打包完成! 所有文件已输出到 dist/ 目录")
