@@ -70,16 +70,18 @@ class MouseSimulatorApp:
         print("Starting mouse movement simulation...")
         print("================================")
     
-    def start_next_mode(self):
-        """启动下一个随机模式"""
-        # 使用加权随机选择一种浏览行为
-        mode_name = weighted_mode_selector.choice()
+    def start_next_mode(self, mode_name=None):
+        """启动下一个模式"""
+        # 如果没有指定模式，则随机选择
+        if mode_name is None:
+            mode_name = weighted_mode_selector.choice()
         
         # 输出模式切换日志
-        print(f"[Mode] Switching to: {mode_name}")
+        print(f"[Mode] Starting: {mode_name}")
         
-        # 更新LED以反映当前模式
-        self.context.led_mode_color = self.led_controller.update_led_for_mode(mode_name, True)
+        # 设置LED为活动模式（恒定亮度）
+        self.led_controller.set_mode('active')
+        self.context.led_mode_color = self.led_controller.set_next_color(mode_name)
         self.context.current_mode = mode_name
         
         # 创建模式实例
@@ -110,28 +112,51 @@ class MouseSimulatorApp:
         if self.perf_stats.should_report(PERFORMANCE_REPORT_INTERVAL):
             self.perf_stats.print_report()
         
-        # 更新呼吸灯效果
-        if not self.context.breathing_active and self.context.current_mode:
-            self.led_controller.update_breathing(self.context.led_mode_color)
+        # 更新LED效果（活动时恒定亮度，停顿时呼吸灯）
+        if not self.context.breathing_active:
+            self.led_controller.update()
         
         # 更新当前模式
         if self.context.current_mode and self.context.current_state and self.current_mode_instance:
             if self.current_mode_instance.update(self.context.current_state):
-                # 模式完成，设置等待时间
-                self.led_controller.update_led_for_mode(self.context.current_mode, False)
+                # 模式完成，设置等待时间并预告下一个模式
                 self.context.post_mode_wait_time = current_time
                 
                 wait_min, wait_max = self.current_mode_instance.get_wait_time_range()
                 self.context.post_mode_wait_duration = random_pool.uniform(wait_min, wait_max)
                 
+                # 立即选择下一个模式（但不启动颜色过渡）
+                next_mode_name = weighted_mode_selector.choice()
+                self.context.next_mode = next_mode_name
+                self.context.color_transition_started = False  # 标记颜色过渡未开始
+                print(f"[Mode] Next: {next_mode_name} (waiting {self.context.post_mode_wait_duration:.1f}s)")
+                
+                # 设置LED为停顿模式（呼吸灯）
+                self.led_controller.set_mode('idle')
+                
                 self.context.current_mode = None
                 self.current_mode_instance = None
         
+        # 在停顿时间过半时启动颜色过渡
+        if (self.context.current_mode is None and 
+            hasattr(self.context, 'next_mode') and
+            not self.context.color_transition_started and
+            self.context.post_mode_wait_time > 0):
+            elapsed = current_time - self.context.post_mode_wait_time
+            if elapsed >= self.context.post_mode_wait_duration / 2:
+                # 启动颜色过渡
+                self.led_controller.set_next_color(self.context.next_mode)
+                self.context.color_transition_started = True
+                print(f"[LED] Color transition started -> {self.context.next_mode}")
+        
         # 检查是否需要启动新模式
         if (self.context.current_mode is None and 
-            (self.context.post_mode_wait_time == 0 or 
-             current_time - self.context.post_mode_wait_time >= self.context.post_mode_wait_duration)):
-            self.start_next_mode()
+            hasattr(self.context, 'next_mode') and
+            self.context.post_mode_wait_time > 0 and
+            current_time - self.context.post_mode_wait_time >= self.context.post_mode_wait_duration):
+            # 启动之前预告的模式
+            self.start_next_mode(self.context.next_mode)
+            delattr(self.context, 'next_mode')
             # 启动短暂的呼吸灯效果以示活跃
             self.start_breathing_led(0.5)
         
@@ -147,7 +172,7 @@ class MouseSimulatorApp:
     def update_breathing_led(self):
         """更新呼吸灯任务"""
         if self.context.breathing_active:
-            self.led_controller.update_breathing(self.context.led_mode_color)
+            self.led_controller.update()
             if time.monotonic() - self.context.breathing_start_time >= self.context.breathing_duration:
                 self.context.breathing_active = False
     
