@@ -288,11 +288,12 @@ class RandomMovementMode(MovementMode):
         return {
             "target_x": target_x, 
             "target_y": target_y, 
-            "random_moves_left": random_pool.randint(3, 10), 
+            "random_moves_left": random_pool.randint(2, 5),  # 减少移动次数
             "current_x": target_x, 
             "current_y": target_y,
             "pause_time": 0,
-            "total_pause_time": random_pool.uniform(RANDOM_MOVE_PAUSE_TIME_MIN, RANDOM_MOVE_PAUSE_TIME_MAX)
+            "total_pause_time": random_pool.uniform(RANDOM_MOVE_PAUSE_TIME_MIN, RANDOM_MOVE_PAUSE_TIME_MAX),
+            "last_move_time": 0  # 记录上次移动时间
         }
     
     def update(self, state):
@@ -301,12 +302,16 @@ class RandomMovementMode(MovementMode):
             self.mouse_mover.update()
             return False
         elif state["random_moves_left"] > 0:
-            direction_x = random_pool.randint(-3, 3)
-            direction_y = random_pool.randint(-3, 3)
-            self.mouse_mover.smooth_move_small(state["current_x"], state["current_y"], state["current_x"] + direction_x, state["current_y"] + direction_y)
-            state["current_x"] += direction_x
-            state["current_y"] += direction_y
-            state["random_moves_left"] -= 1
+            # 添加移动间隔，避免频繁震颤
+            if state["last_move_time"] == 0 or current_time - state["last_move_time"] >= 0.5:
+                # 更大的随机移动距离
+                direction_x = random_pool.randint(-80, 80)
+                direction_y = random_pool.randint(-80, 80)
+                self.mouse_mover.quick_move_to_target(direction_x, direction_y)
+                state["current_x"] += direction_x
+                state["current_y"] += direction_y
+                state["random_moves_left"] -= 1
+                state["last_move_time"] = current_time
             return False
         elif state["pause_time"] < state["total_pause_time"]:
             if "pause_start_time" not in state:
