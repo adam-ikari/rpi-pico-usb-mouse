@@ -27,6 +27,12 @@ class MouseMover:
         self.bezier_index = 0
         self.current_x = 0
         self.current_y = 0
+        
+        # PID 控制器（模拟人手调整）- 延迟导入
+        from pid_controller import PIDController
+        self.pid = PIDController()
+        self.target_x = 0
+        self.target_y = 0
 
     def quick_move_to_target(self, end_x, end_y, duration_factor=0.02):
         """
@@ -56,6 +62,13 @@ class MouseMover:
             self.active = True
             self.start_time = time.monotonic()
             self.move_duration = duration_factor
+            
+            # 设置 PID 目标和当前位置
+            self.target_x = end_x
+            self.target_y = end_y
+            self.current_x = 0
+            self.current_y = 0
+            self.pid.reset()
             
         except Exception as e:
             raise
@@ -143,6 +156,13 @@ class MouseMover:
             self.bezier_index = 0
             self.active = True
             
+            # 设置 PID 目标和当前位置
+            self.target_x = end_x
+            self.target_y = end_y
+            self.current_x = 0
+            self.current_y = 0
+            self.pid.reset()
+            
         except Exception as e:
             raise
 
@@ -191,12 +211,20 @@ class MouseMover:
             self.small_move_index = 0
             self.active = True
             
+            # 设置 PID 目标和当前位置
+            self.target_x = end_x
+            self.target_y = end_y
+            self.current_x = start_x
+            self.current_y = start_y
+            self.pid.reset()
+            
         except Exception as e:
             raise
 
     def update(self):
         """
         更新鼠标移动状态，非阻塞
+        集成 PID 控制器模拟人手微调
         """
         if not self.active:
             return True
@@ -207,22 +235,46 @@ class MouseMover:
         if self.small_move_steps:
             if self.small_move_index < len(self.small_move_steps):
                 x, y = self.small_move_steps[self.small_move_index]
+                
+                # 应用 PID 修正（模拟人手调整）
+                correction_x, correction_y = self.pid.update(
+                    self.target_x, self.target_y,
+                    self.current_x, self.current_y
+                )
+                x += correction_x
+                y += correction_y
+                
                 self.mouse.move(x=x, y=y)
+                self.current_x += x
+                self.current_y += y
                 self.small_move_index += 1
                 return False
             else:
                 self.small_move_steps = []
                 self.active = False
+                self.pid.reset()
                 return True
         elif self.bezier_points:
             if self.bezier_index < len(self.bezier_points):
                 x, y = self.bezier_points[self.bezier_index]
+                
+                # 应用 PID 修正（模拟人手调整）
+                correction_x, correction_y = self.pid.update(
+                    self.target_x, self.target_y,
+                    self.current_x, self.current_y
+                )
+                x += correction_x
+                y += correction_y
+                
                 self.mouse.move(x=x, y=y)
+                self.current_x += x
+                self.current_y += y
                 self.bezier_index += 1
                 return False
             else:
                 self.bezier_points = []
                 self.active = False
+                self.pid.reset()
                 return True
         else:
             self.active = False

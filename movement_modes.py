@@ -170,6 +170,16 @@ class PageScanningMode(MovementMode):
             if state["current_step"] < len(state["scan_bezier_points"]):
                 x_move, y_move = state["scan_bezier_points"][state["current_step"]]
                 
+                # 根据扫描方向应用不同速度：向右慢(80%)，向左快(140%)
+                if state["scan_direction"] == 1:
+                    # 向右扫描：慢速
+                    x_move = (x_move * SCAN_SPEED_RIGHT) // 100
+                    y_move = (y_move * SCAN_SPEED_RIGHT) // 100
+                else:
+                    # 向左扫描：快速
+                    x_move = (x_move * SCAN_SPEED_LEFT) // 100
+                    y_move = (y_move * SCAN_SPEED_LEFT) // 100
+                
                 if state["current_step"] % random_pool.randint(10, 50) == 0:
                     pause_or_slow = random_pool.choice(["pause", "slow", "normal"])
                     if pause_or_slow == "pause":

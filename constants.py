@@ -173,13 +173,11 @@ BEZIER_CONTROL_OFFSET_MIN = 10  # 10% = 0.1
 BEZIER_CONTROL_OFFSET_MAX = 40  # 40% = 0.4
 
 # 模式间过渡参数
-MODE_TRANSITION_ENABLED = True  # 是否启用模式间的贝塞尔过渡
 MODE_TRANSITION_MIN_STEPS = 20  # 模式过渡最小步数
 MODE_TRANSITION_MAX_STEPS = 60  # 模式过渡最大步数
 MODE_TRANSITION_CONTROL_OFFSET = 30  # 过渡控制点偏移 30%
 
 # 等待时间参数（支持零等待）
-ALLOW_ZERO_WAIT = True  # 允许模式间零等待时间
 ZERO_WAIT_PROBABILITY = 30  # 30% 概率使用零等待
 
 # Perlin噪声参数
@@ -213,3 +211,20 @@ EXPLORATORY_MOVE_RANGE_MAX = 200
 RANDOM_MOVE_RANGE_MAX = 150
 CIRCLE_CENTER_RANGE_MAX = 600
 TARGET_FOCUS_RANGE_MAX = 400
+
+# PID 控制器参数（模拟人手调整）
+PID_KP = 80  # 比例系数 (×100)
+PID_KI = 5   # 积分系数 (×100)
+PID_KD = 20  # 微分系数 (×100)
+
+# 人手反应延迟（毫秒）
+HUMAN_REACTION_DELAY_MIN = 100  # 最小延迟 100ms
+HUMAN_REACTION_DELAY_MAX = 400  # 最大延迟 400ms
+
+# PID 扰动参数
+PID_NOISE_AMPLITUDE = 15  # 扰动幅度 (×100)
+PID_NOISE_FREQUENCY = 200  # 扰动频率（毫秒）
+
+# 页面扫描速度参数（左右不对称）
+SCAN_SPEED_RIGHT = 80   # 向右扫描速度 80% (慢)
+SCAN_SPEED_LEFT = 140   # 向左扫描速度 140% (快)

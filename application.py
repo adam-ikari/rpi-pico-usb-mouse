@@ -118,7 +118,7 @@ class MouseSimulatorApp:
                 wait_min, wait_max = self.current_mode_instance.get_wait_time_range()
                 
                 # 30% 概率使用零等待（连续切换）
-                use_zero_wait = random_pool.random() < (ZERO_WAIT_PROBABILITY / 100) if ALLOW_ZERO_WAIT else False
+                use_zero_wait = random_pool.random() < (ZERO_WAIT_PROBABILITY / 100)
                 
                 if use_zero_wait:
                     # 零等待：立即切换到下一个模式
