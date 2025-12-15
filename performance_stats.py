@@ -36,19 +36,28 @@ class PerformanceStats:
         
         self.loop_count += 1
         
+        # 防止长时间运行计数器溢出（约1天@116FPS）
+        if self.loop_count > 10000000:
+            self.reset(print_notice=True)
+            return
+        
         current_time = time.monotonic()
-        frame_time = current_time - self.last_frame_time
+        
+        if self.loop_count > 1:
+            frame_time = current_time - self.last_frame_time
+            
+            if frame_time > 0:
+                if frame_time > self.max_frame_time:
+                    self.max_frame_time = frame_time
+                if frame_time < self.min_frame_time:
+                    self.min_frame_time = frame_time
+                
+                if len(self.frame_times) < 100:
+                    self.frame_times.append(frame_time)
+                else:
+                    self.frame_times[(self.loop_count - 1) % 100] = frame_time
+        
         self.last_frame_time = current_time
-        
-        if frame_time > self.max_frame_time:
-            self.max_frame_time = frame_time
-        if frame_time < self.min_frame_time:
-            self.min_frame_time = frame_time
-        
-        if len(self.frame_times) < 100:
-            self.frame_times.append(frame_time)
-        else:
-            self.frame_times[self.loop_count % 100] = frame_time
     
     def record_mode_switch(self, mode_name):
         if not self.enable_stats:
@@ -73,7 +82,7 @@ class PerformanceStats:
         if not self.enable_stats:
             return
         
-        if hasattr(gc, 'mem_free'):
+        if self.loop_count % 100 == 0 and hasattr(gc, 'mem_free'):
             mem_free = gc.mem_free()
             if mem_free < self.mem_free_min:
                 self.mem_free_min = mem_free
@@ -101,37 +110,44 @@ class PerformanceStats:
     
     def get_report(self):
         if not self.enable_stats:
-            return "Performance stats disabled"
+            return "Stats disabled"
         
         uptime = self.get_uptime()
         avg_fps = self.get_fps()
+        avg_frame = self.get_avg_frame_time() * 1000
         
         report = []
-        report.append("=== Performance Report ===")
-        report.append(f"Uptime: {uptime:.1f}s")
-        report.append(f"Loop count: {self.loop_count}")
-        report.append(f"Avg FPS: {avg_fps:.1f}")
-        report.append(f"Frame time: avg={self.get_avg_frame_time()*1000:.2f}ms min={self.min_frame_time*1000:.2f}ms max={self.max_frame_time*1000:.2f}ms")
+        report.append("=== Perf ===")
+        report.append(f"Up: {uptime:.0f}s | Loops: {self.loop_count}")
+        report.append(f"FPS: {avg_fps:.1f}")
+        report.append(f"Frame: {avg_frame:.1f}/{self.min_frame_time*1000:.1f}/{self.max_frame_time*1000:.1f}ms")
         
         if hasattr(gc, 'mem_free'):
             mem_free = gc.mem_free()
-            mem_used = self.mem_free_start - mem_free
-            mem_peak = self.mem_free_start - self.mem_free_min
-            report.append(f"Memory: free={mem_free}B used={mem_used}B peak={mem_peak}B")
+            mem_kb = mem_free // 1024
+            peak_kb = (self.mem_free_start - self.mem_free_min) // 1024
+            report.append(f"Mem: {mem_kb}KB free, {peak_kb}KB peak")
         
-        report.append("Mode switches:")
-        for mode, count in self.mode_counts.items():
-            report.append(f"  {mode}: {count}")
+        total_modes = sum(self.mode_counts.values())
+        if total_modes > 0:
+            report.append("Modes:")
+            for mode, count in self.mode_counts.items():
+                pct = (count * 100) // total_modes
+                if count > 0:
+                    report.append(f"  {mode[:12]}: {count} ({pct}%)")
         
-        report.append(f"Bezier calcs: {self.bezier_calc_count}")
-        report.append(f"Trig calls: {self.trig_call_count}")
+        if self.bezier_calc_count > 0 or self.trig_call_count > 0:
+            report.append(f"Math: B={self.bezier_calc_count} T={self.trig_call_count}")
         
         return "\n".join(report)
     
     def print_report(self):
         print(self.get_report())
     
-    def reset(self):
+    def reset(self, print_notice=False):
+        if print_notice and self.enable_stats:
+            print("=== Stats Reset (overflow protection) ===")
+        
         self.loop_count = 0
         self.start_time = time.monotonic()
         self.last_report_time = self.start_time

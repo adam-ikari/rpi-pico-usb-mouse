@@ -75,6 +75,9 @@ class MouseSimulatorApp:
         # 使用加权随机选择一种浏览行为
         mode_name = weighted_mode_selector.choice()
         
+        # 输出模式切换日志
+        print(f"[Mode] Switching to: {mode_name}")
+        
         # 更新LED以反映当前模式
         self.context.led_mode_color = self.led_controller.update_led_for_mode(mode_name, True)
         self.context.current_mode = mode_name

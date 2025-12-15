@@ -83,8 +83,8 @@ class WebBrowsingMode(MovementMode):
                 current_time - state["time_offset"], 100, 
                 frequency=2.0, octaves=1
             )
-            target_x += noise_x * 0.5
-            target_y += noise_y * 0.5
+            target_x += int(noise_x) >> 1
+            target_y += int(noise_y) >> 1
             
             move_x = int(target_x - state["current_x"])
             move_y = int(target_y - state["current_y"])
@@ -108,8 +108,8 @@ class WebBrowsingMode(MovementMode):
                 current_time - state["time_offset"], 101, 
                 frequency=3.0, octaves=1
             )
-            small_move_x += noise_x * 2
-            small_move_y += noise_y * 2
+            small_move_x += int(noise_x * 2)
+            small_move_y += int(noise_y * 2)
             
             self.mouse_mover.mouse.move(x=int(small_move_x), y=int(small_move_y))
             state["current_x"] += small_move_x
@@ -129,13 +129,14 @@ class WebBrowsingMode(MovementMode):
     
     def _generate_bezier_control_point(self, start_x, start_y, end_x, end_y):
         """生成二次贝塞尔曲线的控制点"""
-        dx = end_x - start_x
-        dy = end_y - start_y
+        dx = int(end_x - start_x)
+        dy = int(end_y - start_y)
         
-        mid_x = start_x + dx * 0.5
-        mid_y = start_y + dy * 0.5
+        mid_x = start_x + (dx >> 1)
+        mid_y = start_y + (dy >> 1)
         
-        offset = random_pool.uniform(-abs(dx + dy) * 0.2, abs(dx + dy) * 0.2)
+        range_val = (abs(dx + dy) * 20) // 100
+        offset = random_pool.uniform(-range_val, range_val)
         control_x = mid_x + offset
         control_y = mid_y + offset
         
@@ -203,9 +204,11 @@ class PageScanningMode(MovementMode):
             x_move = state["step_x"]
             y_move = 0
             
+            step_offset = state["current_step"] / 10
+            time_offset_val = current_time - state["time_offset"] + step_offset
             wind_offset_x, wind_offset_y = self._apply_wind_effect(
                 x_move, y_move,
-                current_time - state["time_offset"] + state["current_step"] * 0.1,
+                time_offset_val,
                 wind_strength=3.0
             )
             
@@ -217,11 +220,11 @@ class PageScanningMode(MovementMode):
                 if pause_or_slow == "pause":
                     return False
                 elif pause_or_slow == "slow":
-                    x_move *= SLOW_SPEED_FACTOR
-                    y_move *= SLOW_SPEED_FACTOR
+                    x_move = (int(x_move) * SLOW_SPEED_FACTOR) // 100
+                    y_move = (int(y_move) * SLOW_SPEED_FACTOR) // 100
             elif state["current_step"] % random_pool.randint(10, 50) == 0:
-                x_move *= FAST_SPEED_FACTOR
-                y_move *= FAST_SPEED_FACTOR
+                x_move = (int(x_move) * FAST_SPEED_FACTOR) // 100
+                y_move = (int(y_move) * FAST_SPEED_FACTOR) // 100
             
             self.mouse_mover.mouse.move(x=int(x_move), y=int(y_move))
             state["current_x"] += x_move
@@ -241,9 +244,11 @@ class PageScanningMode(MovementMode):
     
     def _apply_wind_effect(self, x, y, time_offset, wind_strength=2.0):
         """应用风力效果，添加横向偏移"""
-        wind_x = noise_generator.value_noise_2d(time_offset * 0.5, 0, frequency=1.0) * wind_strength
-        wind_y = noise_generator.value_noise_2d(time_offset * 0.5, 50, frequency=1.0) * wind_strength * 0.5
-        return x + wind_x, y + wind_y
+        half_time = time_offset / 2
+        wind_x = noise_generator.value_noise_2d(half_time, 0, frequency=1.0) * wind_strength
+        wind_y = noise_generator.value_noise_2d(half_time, 50, frequency=1.0) * wind_strength
+        wind_y = int(wind_y) >> 1
+        return x + int(wind_x), y + wind_y
 
 
 class ExploratoryMovementMode(MovementMode):
@@ -338,8 +343,8 @@ class CircularMovementMode(MovementMode):
         center_y = range_manager.randint('circle_center')
         
         base_radius = random_pool.randint(30, 100)
-        radius_x = base_radius * random_pool.uniform(0.7, 1.3)
-        radius_y = base_radius * random_pool.uniform(0.7, 1.3)
+        radius_x = int(base_radius * random_pool.uniform(0.7, 1.3))
+        radius_y = int(base_radius * random_pool.uniform(0.7, 1.3))
         
         start_angle = random_pool.uniform(0, 2 * 3.14159)
         
@@ -353,7 +358,7 @@ class CircularMovementMode(MovementMode):
             "radius_x": radius_x,
             "radius_y": radius_y,
             "current_angle": start_angle,
-            "angle_step": random_pool.uniform(CIRCLE_ANGLE_STEP_MIN, CIRCLE_ANGLE_STEP_MAX),
+            "angle_step": random_pool.uniform(CIRCLE_ANGLE_STEP_MIN, CIRCLE_ANGLE_STEP_MAX) / 100,
             "steps_completed": 0,
             "total_steps": random_pool.randint(30, 70),
             "time_at_location": 0,
@@ -379,8 +384,8 @@ class CircularMovementMode(MovementMode):
                 state["current_angle"] + 100,
                 frequency=1.5, octaves=1
             )
-            new_x += noise_x * 2
-            new_y += noise_y * 2
+            new_x += int(noise_x * 2)
+            new_y += int(noise_y * 2)
             
             if "prev_x" not in state or "prev_y" not in state:
                 state["prev_x"] = new_x
@@ -396,10 +401,10 @@ class CircularMovementMode(MovementMode):
             state["current_angle"] += state["angle_step"]
             state["steps_completed"] += 1
             
-            if random_pool.random() < CIRCLE_SPEED_CHANGE_PROBABILITY and state["steps_completed"] > 5:
-                change_factor = random_pool.uniform(0.9, 1.1)
+            if random_pool.random() < (CIRCLE_SPEED_CHANGE_PROBABILITY / 100) and state["steps_completed"] > 5:
+                change_factor = random_pool.uniform(90, 110) / 100
                 state["angle_step"] *= change_factor
-                state["angle_step"] = max(CIRCLE_NEW_ANGLE_STEP_MIN, min(CIRCLE_NEW_ANGLE_STEP_MAX, state["angle_step"]))
+                state["angle_step"] = max(CIRCLE_NEW_ANGLE_STEP_MIN / 100, min(CIRCLE_NEW_ANGLE_STEP_MAX / 100, state["angle_step"]))
             
             return False
         elif state["time_at_location"] < state["total_time_at_location"]:
@@ -497,8 +502,8 @@ class TargetFocusMode(MovementMode):
                 frequency=3.0, octaves=1
             )
             
-            micro_x = int(pull_x + noise_x * 3)
-            micro_y = int(pull_y + noise_y * 3)
+            micro_x = pull_x + int(noise_x * 3)
+            micro_y = pull_y + int(noise_y * 3)
             
             self.mouse_mover.mouse.move(x=micro_x, y=micro_y)
             state["current_x"] += micro_x
@@ -541,8 +546,9 @@ class TargetFocusMode(MovementMode):
         distance = fast_distance(int(dx), int(dy))
         
         if distance > 0:
-            pull_x = (dx / distance) * strength * distance
-            pull_y = (dy / distance) * strength * distance
+            strength_int = int(strength * 100)
+            pull_x = (dx * strength_int * distance) // (distance * 100)
+            pull_y = (dy * strength_int * distance) // (distance * 100)
             return pull_x, pull_y
         return 0, 0
     

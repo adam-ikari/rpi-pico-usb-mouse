@@ -40,8 +40,9 @@ class LEDController:
             self.current_brightness_int = 10
             self.brightness_direction = 1
         
-        brightness = self.current_brightness_int / 100
-        self.set_color_with_brightness(color, brightness)
+        self.pixels.brightness = self.current_brightness_int / 100
+        self.pixels.fill(color)
+        self.pixels.show()
     
     def start_transition(self, duration):
         """启动过渡计时器"""

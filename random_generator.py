@@ -6,6 +6,8 @@
 import time
 from constants import *
 
+RAND_SCALE = 65536
+
 
 class FastRandom:
     """快速伪随机数生成器"""
@@ -20,7 +22,7 @@ class FastRandom:
         self.state ^= (self.state << 13) & 0xFFFFFFFF
         self.state ^= (self.state >> 17) & 0xFFFFFFFF
         self.state ^= (self.state << 5) & 0xFFFFFFFF
-        return (self.state & 0xFFFF) / 65536.0
+        return (self.state & 0xFFFF) / RAND_SCALE
     
     def random_int16(self):
         self.state ^= (self.state << 13) & 0xFFFFFFFF
@@ -31,12 +33,12 @@ class FastRandom:
     def randint(self, a, b):
         range_size = b - a + 1
         rand_int = self.random_int16()
-        return a + (rand_int * range_size) // 65536
+        return a + ((rand_int * range_size) >> 16)
     
     def uniform(self, a, b):
         range_val = b - a
         rand_int = self.random_int16()
-        return a + (rand_int * range_val) / 65536
+        return a + (rand_int * range_val) / RAND_SCALE
     
     def choice(self, seq):
         """从序列中随机选择一个元素"""

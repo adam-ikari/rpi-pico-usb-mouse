@@ -2,7 +2,7 @@ import time
 import random
 from constants import *
 from random_generator import fast_random, random_pool
-from fast_math import fast_distance
+from fast_math import fast_distance, percent_to_float
 
 
 class MouseMover:
@@ -67,31 +67,21 @@ class MouseMover:
         
         profile = []
         
-        # 加速阶段 - 使用整数运算
-        # factor = 0.01 + 0.99 * t^2
         accel_steps_max = max(accel_steps, 1)
         for i in range(accel_steps):
-            # t = i / accel_steps，使用整数运算
-            # t_squared = (i * i) / (accel_steps * accel_steps)
-            # factor = 0.01 + 0.99 * t_squared
-            t_sq_scaled = (i * i * 100) // (accel_steps_max * accel_steps_max)  # 0-100
-            factor = 1 + (99 * t_sq_scaled) // 100  # 1-100，表示 0.01-1.00
-            profile.append(factor / 100)  # 转回小数
+            t_sq_scaled = (i * i * 100) // (accel_steps_max * accel_steps_max)
+            factor = 1 + (99 * t_sq_scaled) // 100
+            profile.append(factor)
         
-        # 匀速阶段
         for i in range(const_steps):
-            # 1.0 + uniform(-0.05, 0.05)
-            variation = random_pool.uniform(-5, 5) / 100  # -0.05 到 0.05
-            profile.append(1.0 + variation)
+            variation = random_pool.uniform(-5, 5)
+            profile.append(100 + int(variation))
         
-        # 减速阶段 - 使用整数运算
         decel_steps_max = max(decel_steps, 1)
         for i in range(decel_steps):
-            # factor = 1.0 - 0.995 * t^2
             t_sq_scaled = (i * i * 100) // (decel_steps_max * decel_steps_max)
-            factor = 100 - (99 * t_sq_scaled) // 100  # 100-1
-            factor = max(1, factor)  # 最小 0.01
-            profile.append(factor / 100)
+            factor = max(1, 100 - (99 * t_sq_scaled) // 100)
+            profile.append(factor)
         
         return profile
 
@@ -121,47 +111,50 @@ class MouseMover:
             for i in range(steps):
                 # 基础移动量
                 if steps > 0:
-                    base_x = (end_x - start_x) / steps
-                    base_y = (end_y - start_y) / steps
+                    base_x = ((end_x - start_x) << 8) // steps
+                    base_y = ((end_y - start_y) << 8) // steps
                 else:
                     base_x = 0
                     base_y = 0
                 
                 # 应用速度变化
-                velocity_factor = velocity_profile[i] if i < len(velocity_profile) else 1.0
+                velocity_factor = velocity_profile[i] if i < len(velocity_profile) else 100
                 
                 # 添加速度变化
-                actual_x = base_x * velocity_factor
-                actual_y = base_y * velocity_factor
+                actual_x = (base_x * velocity_factor) // 100
+                actual_y = (base_y * velocity_factor) // 100
                 
                 # 添加更小的随机偏移，模拟人类手部微小抖动
-                offset_x = random_pool.uniform(SMALL_MOVE_OFFSET_MIN, SMALL_MOVE_OFFSET_MAX) * velocity_factor
-                offset_y = random_pool.uniform(SMALL_MOVE_OFFSET_MIN, SMALL_MOVE_OFFSET_MAX) * velocity_factor
+                offset_x = (int(random_pool.uniform(SMALL_MOVE_OFFSET_MIN, SMALL_MOVE_OFFSET_MAX)) * velocity_factor) // 100
+                offset_y = (int(random_pool.uniform(SMALL_MOVE_OFFSET_MIN, SMALL_MOVE_OFFSET_MAX)) * velocity_factor) // 100
                 actual_x += offset_x
                 actual_y += offset_y
                 
                 # 减少方向调整频率
                 if i % random_pool.randint(DIRECTION_ADJUST_INTERVAL_MIN, DIRECTION_ADJUST_INTERVAL_MAX) == 0 and i > 0:
-                    actual_x += random_pool.uniform(LARGE_MOVE_OFFSET_MIN, LARGE_MOVE_OFFSET_MAX)
-                    actual_y += random_pool.uniform(LARGE_MOVE_OFFSET_MIN, LARGE_MOVE_OFFSET_MAX)
+                    actual_x += int(random_pool.uniform(LARGE_MOVE_OFFSET_MIN, LARGE_MOVE_OFFSET_MAX))
+                    actual_y += int(random_pool.uniform(LARGE_MOVE_OFFSET_MIN, LARGE_MOVE_OFFSET_MAX))
                 
                 # 增加停顿概率，模拟人类思考
-                if random_pool.random() < THINK_PAUSE_PROBABILITY:
+                rand_val = int(random_pool.random() * 100)
+                actual_x = int(actual_x)
+                actual_y = int(actual_y)
+                if rand_val < THINK_PAUSE_PROBABILITY:
                     self.small_move_steps.append((0, 0))  # 停顿一步
-                    self.small_move_steps.append((int(actual_x), int(actual_y)))
+                    self.small_move_steps.append((actual_x >> 8, actual_y >> 8))
                 else:
-                    self.small_move_steps.append((int(actual_x), int(actual_y)))
+                    self.small_move_steps.append((actual_x >> 8, actual_y >> 8))
                 
-                cumulative_x += actual_x
-                cumulative_y += actual_y
+                cumulative_x += actual_x >> 8
+                cumulative_y += actual_y >> 8
 
             # 确保最终接近目标点
             if steps > 0:
                 # 添加最后一步来修正累积误差
                 remaining_x = (end_x - start_x) - cumulative_x
                 remaining_y = (end_y - start_y) - cumulative_y
-                if abs(remaining_x) > 0.5 or abs(remaining_y) > 0.5:
-                    self.small_move_steps.append((int(remaining_x), int(remaining_y)))
+                if abs(remaining_x) > 0 or abs(remaining_y) > 0:
+                    self.small_move_steps.append((remaining_x, remaining_y))
 
             self.small_move_index = 0
             self.active = True
@@ -194,9 +187,9 @@ class MouseMover:
         else:  # 快速移动 - 现在使用速度变化曲线
             if self.current_step < self.total_steps:
                 # 根据速度曲线应用移动
-                velocity_factor = self.velocity_profile[self.current_step] if self.current_step < len(self.velocity_profile) else 1.0
-                x_move = int(self.step_x * velocity_factor)
-                y_move = int(self.step_y * velocity_factor)
+                velocity_factor = self.velocity_profile[self.current_step] if self.current_step < len(self.velocity_profile) else 100
+                x_move = (int(self.step_x * 100) * velocity_factor) // 10000
+                y_move = (int(self.step_y * 100) * velocity_factor) // 10000
                 self.mouse.move(x=x_move, y=y_move)
                 self.current_step += 1
                 return False  # 未完成
