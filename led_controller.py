@@ -14,9 +14,8 @@ class LEDController:
         self.pixels = pixels
         self.perf_stats = perf_stats
         self.last_time = time.monotonic()
-        # 使用整数表示亮度（0-100，对应 0.0-1.0）
-        self.current_brightness_int = 100  # 100 = 1.0
-        self.brightness_direction = -1  # -1 表示减少
+        self.current_brightness_int = 100
+        self.brightness_direction = -1
         self.transition_start_time = None
         self.transition_duration = 0
     
@@ -27,18 +26,13 @@ class LEDController:
         self.pixels.show()
     
     def update_breathing(self, color):
-        """非阻塞更新呼吸灯效果（整数优化版本）"""
         current_time = time.monotonic()
         time_delta = min(current_time - self.last_time, TRANSITION_TIME_DELTA_LIMIT)
         self.last_time = current_time
         
-        # 使用整数运算
-        # time_delta / 0.005 ≈ time_delta * 200
-        # 亮度变化：direction * (time_delta * 200)
         delta_int = int(time_delta * 200)
         self.current_brightness_int += self.brightness_direction * delta_int
         
-        # 限制亮度范围 10-100（对应 0.1-1.0）
         if self.current_brightness_int >= 100:
             self.current_brightness_int = 100
             self.brightness_direction = -1
@@ -46,7 +40,6 @@ class LEDController:
             self.current_brightness_int = 10
             self.brightness_direction = 1
         
-        # 转换为浮点数设置亮度
         brightness = self.current_brightness_int / 100
         self.set_color_with_brightness(color, brightness)
     

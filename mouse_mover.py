@@ -1,8 +1,8 @@
 import time
-import math
 import random
 from constants import *
 from random_generator import fast_random, random_pool
+from fast_math import fast_distance
 
 
 class MouseMover:
@@ -28,7 +28,7 @@ class MouseMover:
         实现加速-匀速-减速的人类移动模式
         """
         try:
-            distance = math.sqrt(end_x * end_x + end_y * end_y)
+            distance = fast_distance(int(end_x), int(end_y))
             if distance == 0:
                 return  # 如果距离为0，直接返回
 
@@ -103,7 +103,7 @@ class MouseMover:
         try:
             dx = end_x - start_x
             dy = end_y - start_y
-            distance = math.sqrt(dx * dx + dy * dy)
+            distance = fast_distance(int(dx), int(dy))
             if distance == 0:
                 return  # 如果距离为0，直接返回
 

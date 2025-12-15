@@ -8,6 +8,7 @@ import math
 from constants import *
 from noise_generator import noise_generator
 from random_generator import fast_random, random_pool, range_manager, weighted_mode_selector
+from fast_math import fast_distance
 
 
 class MovementMode:
@@ -37,7 +38,7 @@ class WebBrowsingMode(MovementMode):
         target_x = range_manager.randint('web_browse_x')
         target_y = range_manager.randint('web_browse_y')
         
-        distance = math.sqrt(target_x * target_x + target_y * target_y)
+        distance = fast_distance(target_x, target_y)
         total_steps = min(max(int(distance / 15), 15), 40)
         
         control_x, control_y = self._generate_bezier_control_point(0, 0, target_x, target_y)
@@ -425,16 +426,11 @@ class CircularMovementMode(MovementMode):
         return self._fast_cos_impl(angle_rad)
     
     def _fast_sin_impl(self, angle_rad):
-        """快速sin计算实现（查表法 + 对称性）"""
         if not hasattr(self, '_trig_lut_initialized'):
             self._init_trig_lut()
         
-        # 转换为度数（使用整数运算）
-        # angle_deg = angle_rad * 180 / π
-        # 使用近似：180/π ≈ 57.296
         angle_deg = int((angle_rad * 573) // 10) % 360
         
-        # 使用对称性
         if angle_deg <= 90:
             return self._sin_lut_int[angle_deg] / 10000
         elif angle_deg <= 180:
@@ -445,22 +441,14 @@ class CircularMovementMode(MovementMode):
             return -self._sin_lut_int[360 - angle_deg] / 10000
     
     def _fast_cos_impl(self, angle_rad):
-        """快速cos计算实现（使用 sin 的对称性）"""
-        # cos(x) = sin(x + 90°)
-        return self._fast_sin_impl(angle_rad + 1.5708)  # +π/2
+        return self._fast_sin_impl(angle_rad + 1.5708)
     
     def _init_trig_lut(self):
-        """初始化三角函数查找表（优化版本）"""
-        # 只存储 0-90 度的值，其他象限通过对称性计算
-        # 使用整数存储（乘以 10000）以避免浮点数
         self._sin_lut_int = []
         for i in range(91):
-            # 使用 math.sin 计算一次，然后转为整数存储
-            angle_rad = i * 0.017453292519943295  # i * π/180
+            angle_rad = i * 0.017453292519943295
             sin_val = math.sin(angle_rad)
             self._sin_lut_int.append(int(sin_val * 10000))
-        
-        # 标记已初始化
         self._trig_lut_initialized = True
     
     
@@ -550,7 +538,7 @@ class TargetFocusMode(MovementMode):
         """应用重力效果，向目标点拉近"""
         dx = target_x - current_x
         dy = target_y - current_y
-        distance = math.sqrt(dx * dx + dy * dy)
+        distance = fast_distance(int(dx), int(dy))
         
         if distance > 0:
             pull_x = (dx / distance) * strength * distance

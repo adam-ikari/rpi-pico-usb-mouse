@@ -118,11 +118,9 @@ class NoiseGenerator:
                 return a + t * (b - a)
             
             def fade(t):
-                # 使用整数运算优化
-                # t * t * (3 - 2*t) = 3t^2 - 2t^3
-                t_int = int(t * 256)  # 转为整数 0-256
-                t_sq = (t_int * t_int) >> 8  # t^2
-                t_cu = (t_sq * t_int) >> 8   # t^3
+                t_int = int(t * 256)
+                t_sq = (t_int * t_int) >> 8
+                t_cu = (t_sq * t_int) >> 8
                 result = (3 * t_sq - 2 * t_cu) >> 8
                 return result / 256
             
