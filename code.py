@@ -8,6 +8,11 @@ import neopixel
 from pin_config import LED_PIN
 from constants import *
 
+# 数学常量
+PI = 3.141592653589793
+DEG_TO_RAD = PI / 180.0  # 角度转弧度
+RAD_TO_DEG = 180.0 / PI  # 弧度转角度
+
 # Initialize the Mouse object
 mouse = Mouse(usb_hid.devices)
 
@@ -16,73 +21,198 @@ pixel_pin = LED_PIN
 num_pixels = NUM_PIXELS
 pixels = neopixel.NeoPixel(pixel_pin, num_pixels, brightness=DEFAULT_BRIGHTNESS, auto_write=True)
 
-# 定义不同模式的颜色
-WEB_BROWSING_COLOR = WEB_BROWSING_COLOR    # 红色 - 网页浏览
-PAGE_SCANNING_COLOR = PAGE_SCANNING_COLOR   # 绿色 - 页面扫描
-EXPLORATORY_COLOR = EXPLORATORY_COLOR   # 蓝色 - 探索性移动
-RANDOM_MOVEMENT_COLOR = RANDOM_MOVEMENT_COLOR  # 黄色 - 随机移动
-CIRCULAR_MOVEMENT_COLOR = CIRCULAR_MOVEMENT_COLOR  # 紫色 - 圆形移动
-TARGET_FOCUS_COLOR = TARGET_FOCUS_COLOR    # 青色 - 目标聚焦
+# 颜色和亮度常量已从 constants.py 导入，无需重复定义
 
-# 呼吸灯相关参数
-BREATHE_MIN_BRIGHTNESS = BREATHE_MIN_BRIGHTNESS  # 最小亮度，确保LED不会完全熄灭
-BREATHE_MAX_BRIGHTNESS = BREATHE_MAX_BRIGHTNESS   # 最大亮度
-
-# 事件循环相关变量
-last_time = time.monotonic()
-current_brightness = BREATHE_MAX_BRIGHTNESS
-brightness_direction = -0.01  # 亮度变化方向
-transition_start_time = None
-transition_duration = 0
-
-def set_led_color_with_brightness(color, brightness):
-    """
-    设置LED颜色和亮度
-    """
-    pixels.brightness = brightness
-    pixels.fill(color)
-    pixels.show()
-
-def update_breathing_led(color):
-    """
-    非阻塞更新呼吸灯效果
-    """
-    global current_brightness, brightness_direction, last_time
+# LED 控制器类（封装全局变量）
+class LEDController:
+    """LED 呼吸灯和颜色控制器"""
+    def __init__(self, pixels):
+        self.pixels = pixels
+        self.last_time = time.monotonic()
+        self.current_brightness = BREATHE_MAX_BRIGHTNESS
+        self.brightness_direction = -0.01
+        self.transition_start_time = None
+        self.transition_duration = 0
     
-    current_time = time.monotonic()
-    # 使用较小的时间增量以获得更平滑的效果
-    time_delta = min(current_time - last_time, TRANSITION_TIME_DELTA_LIMIT)  # 限制时间增量以避免大的跳跃
-    last_time = current_time
+    def set_color_with_brightness(self, color, brightness):
+        """设置LED颜色和亮度"""
+        self.pixels.brightness = brightness
+        self.pixels.fill(color)
+        self.pixels.show()
     
-    # 更新亮度
-    current_brightness += brightness_direction * (time_delta / BRIGHTNESS_CHANGE_SPEED_FACTOR)  # 调整变化速度
+    def update_breathing(self, color):
+        """非阻塞更新呼吸灯效果"""
+        current_time = time.monotonic()
+        time_delta = min(current_time - self.last_time, TRANSITION_TIME_DELTA_LIMIT)
+        self.last_time = current_time
+        
+        self.current_brightness += self.brightness_direction * (time_delta / BRIGHTNESS_CHANGE_SPEED_FACTOR)
+        
+        if self.current_brightness >= BREATHE_MAX_BRIGHTNESS:
+            self.current_brightness = BREATHE_MAX_BRIGHTNESS
+            self.brightness_direction = -abs(self.brightness_direction)
+        elif self.current_brightness <= BREATHE_MIN_BRIGHTNESS:
+            self.current_brightness = BREATHE_MIN_BRIGHTNESS
+            self.brightness_direction = abs(self.brightness_direction)
+        
+        self.set_color_with_brightness(color, self.current_brightness)
     
-    # 反转方向如果达到边界
-    if current_brightness >= BREATHE_MAX_BRIGHTNESS:
-        current_brightness = BREATHE_MAX_BRIGHTNESS
-        brightness_direction = -abs(brightness_direction)
-    elif current_brightness <= BREATHE_MIN_BRIGHTNESS:
-        current_brightness = BREATHE_MIN_BRIGHTNESS
-        brightness_direction = abs(brightness_direction)
+    def start_transition(self, duration):
+        """启动过渡计时器"""
+        self.transition_start_time = time.monotonic()
+        self.transition_duration = duration
     
-    set_led_color_with_brightness(color, current_brightness)
+    def is_transition_complete(self):
+        """检查过渡是否完成"""
+        if self.transition_start_time is None:
+            return True
+        return time.monotonic() - self.transition_start_time >= self.transition_duration
 
-def start_transition_timer(duration):
-    """
-    启动过渡计时器
-    """
-    global transition_start_time, transition_duration
-    transition_start_time = time.monotonic()
-    transition_duration = duration
+# ==================== 三角函数加速（查表法）====================
 
-def is_transition_complete():
+# 预计算 sin/cos 查找表（360度，每度一个值）
+_SIN_LUT = []
+_COS_LUT = []
+
+def _init_trig_lut():
+    """初始化三角函数查找表"""
+    global _SIN_LUT, _COS_LUT
+    if not _SIN_LUT:
+        for i in range(360):
+            angle_rad = i * DEG_TO_RAD
+            _SIN_LUT.append(math.sin(angle_rad))
+            _COS_LUT.append(math.cos(angle_rad))
+
+def fast_sin(angle_rad):
     """
-    检查过渡是否完成
+    快速sin计算（查表法）
+    angle_rad: 弧度值
+    返回: sin值
     """
-    global transition_start_time, transition_duration
-    if transition_start_time is None:
-        return True
-    return time.monotonic() - transition_start_time >= transition_duration
+    if not _SIN_LUT:
+        _init_trig_lut()
+    
+    # 将弧度转换为度数索引
+    angle_deg = int((angle_rad * RAD_TO_DEG) % 360)
+    return _SIN_LUT[angle_deg]
+
+def fast_cos(angle_rad):
+    """
+    快速cos计算（查表法）
+    angle_rad: 弧度值
+    返回: cos值
+    """
+    if not _COS_LUT:
+        _init_trig_lut()
+    
+    # 将弧度转换为度数索引
+    angle_deg = int((angle_rad * RAD_TO_DEG) % 360)
+    return _COS_LUT[angle_deg]
+
+# ==================== 算法辅助函数 ====================
+
+def smooth_noise_1d(x):
+    """
+    简化的一维Perlin噪声函数
+    生成平滑的伪随机值，范围 [-1, 1]
+    """
+    integer_x = int(x)
+    fractional_x = x - integer_x
+    
+    v1 = math.sin(integer_x * 12.9898 + 78.233) * 43758.5453
+    v1 = v1 - int(v1)
+    
+    v2 = math.sin((integer_x + 1) * 12.9898 + 78.233) * 43758.5453
+    v2 = v2 - int(v2)
+    
+    smooth = fractional_x * fractional_x * (3 - 2 * fractional_x)
+    
+    return (v1 * (1 - smooth) + v2 * smooth) * 2 - 1
+
+def perlin_noise_2d(x, y, frequency=1.0):
+    """
+    二维Perlin噪声
+    返回平滑的二维随机值
+    """
+    x_noise = smooth_noise_1d(x * frequency)
+    y_noise = smooth_noise_1d(y * frequency + 100)
+    return x_noise, y_noise
+
+def quadratic_bezier(t, p0, p1, p2):
+    """
+    二次贝塞尔曲线计算（性能优化版）
+    t: 参数 [0, 1]
+    p0: 起点
+    p1: 控制点
+    p2: 终点
+    
+    公式: B(t) = (1-t)²*p0 + 2*(1-t)*t*p1 + t²*p2
+    """
+    u = 1 - t
+    uu = u * u
+    tt = t * t
+    
+    # 二次贝塞尔曲线公式
+    p = uu * p0
+    p += 2 * u * t * p1
+    p += tt * p2
+    
+    return p
+
+def calculate_bezier_point(step, total_steps, start_x, start_y, end_x, end_y, control_x, control_y):
+    """
+    函数式计算二次贝塞尔曲线上的单个点（零内存消耗，性能优化）
+    根据当前步数实时计算，无需存储完整路径
+    """
+    t = step / max(total_steps - 1, 1)
+    x = quadratic_bezier(t, start_x, control_x, end_x)
+    y = quadratic_bezier(t, start_y, control_y, end_y)
+    return x, y
+
+def generate_bezier_control_point(start_x, start_y, end_x, end_y):
+    """
+    生成二次贝塞尔曲线的控制点（仅需1个控制点）
+    
+    控制点位于起点和终点连线的中点附近，
+    添加随机偏移以产生自然的曲线
+    """
+    dx = end_x - start_x
+    dy = end_y - start_y
+    
+    # 控制点在中点位置，添加垂直方向的偏移
+    mid_x = start_x + dx * 0.5
+    mid_y = start_y + dy * 0.5
+    
+    # 添加随机偏移（垂直于连线方向）
+    offset = random.uniform(-abs(dx + dy) * 0.2, abs(dx + dy) * 0.2)
+    control_x = mid_x + offset
+    control_y = mid_y + offset
+    
+    return control_x, control_y
+
+def apply_wind_effect(x, y, time_offset, wind_strength=2.0):
+    """
+    应用风力效果，添加横向偏移
+    """
+    wind_x = smooth_noise_1d(time_offset * 0.5) * wind_strength
+    wind_y = smooth_noise_1d(time_offset * 0.5 + 50) * wind_strength * 0.5
+    return x + wind_x, y + wind_y
+
+def apply_gravity_pull(current_x, current_y, target_x, target_y, strength=0.1):
+    """
+    应用重力效果，向目标点拉近
+    """
+    dx = target_x - current_x
+    dy = target_y - current_y
+    distance = math.sqrt(dx * dx + dy * dy)
+    
+    if distance > 0:
+        pull_x = (dx / distance) * strength * distance
+        pull_y = (dy / distance) * strength * distance
+        return pull_x, pull_y
+    return 0, 0
+
+# ==================== LED 控制函数 ====================
 
 # 鼠标移动状态类，用于非阻塞操作
 class MouseMover:
@@ -103,7 +233,7 @@ class MouseMover:
         非阻塞快速移动鼠标到目标位置，更自然的人类移动模式
         实现加速-匀速-减速的人类移动模式
         """
-        distance = ((end_x - 0) ** 2 + (end_y - 0) ** 2) ** 0.5
+        distance = math.sqrt(end_x * end_x + end_y * end_y)
         if distance == 0:
             return  # 如果距离为0，直接返回
 
@@ -137,7 +267,7 @@ class MouseMover:
         for i in range(accel_steps):
             # 从ACCEL_START_FACTOR加速到ACCEL_END_FACTOR，使用更平缓的曲线
             t = i / accel_steps
-            factor = ACCEL_START_FACTOR + (ACCEL_END_FACTOR - ACCEL_START_FACTOR) * t ** 2  # 使用平方函数使加速更平缓
+            factor = ACCEL_START_FACTOR + (ACCEL_END_FACTOR - ACCEL_START_FACTOR) * t * t  # 使用平方函数使加速更平缓
             profile.append(factor)
         
         # 匀速阶段
@@ -149,7 +279,7 @@ class MouseMover:
         for i in range(decel_steps):
             # 从DECEL_START_FACTOR减速到DECEL_END_FACTOR，使用更平缓的曲线
             t = i / decel_steps
-            factor = DECEL_START_FACTOR - (DECEL_START_FACTOR - DECEL_END_FACTOR) * t ** 2  # 使用平方函数使减速更平缓
+            factor = DECEL_START_FACTOR - (DECEL_START_FACTOR - DECEL_END_FACTOR) * t * t  # 使用平方函数使减速更平缓
             profile.append(max(DECEL_MIN_FACTOR, factor))
         
         return profile
@@ -159,7 +289,9 @@ class MouseMover:
         非阻塞在小范围内平滑移动鼠标，更自然的人类移动模式
         包含加速-匀速-减速和随机速度变化
         """
-        distance = ((end_x - start_x) ** 2 + (end_y - start_y) ** 2) ** 0.5
+        dx = end_x - start_x
+        dy = end_y - start_y
+        distance = math.sqrt(dx * dx + dy * dy)
         if distance == 0:
             return  # 如果距离为0，直接返回
 
@@ -252,8 +384,9 @@ class MouseMover:
                 self.active = False
                 return True  # 完成
 
-# 创建鼠标移动器实例
+# 创建鼠标移动器和 LED 控制器实例
 mouse_mover = MouseMover()
+led_controller = LEDController(pixels)
 
 def init_context():
     """
@@ -266,30 +399,60 @@ def init_context():
 # 非阻塞模拟函数
 def start_web_browsing():
     """
-    启动网页浏览模拟，更自然的人类行为
+    启动网页浏览模拟，使用贝塞尔曲线（函数式计算，零路径存储）
     """
-    # 生成更小范围的目标位置，模拟真实网页浏览
     target_x = random.randint(-WEB_BROWSE_X_RANGE_MAX, WEB_BROWSE_X_RANGE_MAX)
     target_y = random.randint(-WEB_BROWSE_Y_RANGE_MAX, WEB_BROWSE_Y_RANGE_MAX)
-    mouse_mover.quick_move_to_target(target_x, target_y)
-    # 增加小范围移动次数，模拟更真实的阅读行为
-    return {"target_x": target_x, "target_y": target_y, "small_moves_left": random.randint(WEB_BROWSE_SMALL_MOVES_MIN, WEB_BROWSE_SMALL_MOVES_MAX), "current_x": target_x, "current_y": target_y, "time_at_location": 0, "total_time_at_location": random.uniform(WEB_BROWSE_STAY_TIME_MIN, WEB_BROWSE_STAY_TIME_MAX)}
+    
+    distance = math.sqrt(target_x * target_x + target_y * target_y)
+    total_steps = min(max(int(distance / 15), 15), 40)
+    
+    control_x, control_y = generate_bezier_control_point(0, 0, target_x, target_y)
+    
+    return {
+        "start_x": 0,
+        "start_y": 0,
+        "target_x": target_x,
+        "target_y": target_y,
+        "control_x": control_x,
+        "control_y": control_y,
+        "current_step": 0,
+        "total_steps": total_steps,
+        "small_moves_left": random.randint(WEB_BROWSE_SMALL_MOVES_MIN, WEB_BROWSE_SMALL_MOVES_MAX),
+        "current_x": 0,
+        "current_y": 0,
+        "time_at_location": 0,
+        "total_time_at_location": random.uniform(WEB_BROWSE_STAY_TIME_MIN, WEB_BROWSE_STAY_TIME_MAX),
+        "time_offset": time.monotonic()
+    }
 
 def start_page_scanning():
     """
-    启动页面扫描模拟，更自然的人类行为
+    启动页面扫描模拟，使用风力算法模拟眼球跳动
     """
-    # 从屏幕左侧开始，模拟真实页面扫描
     start_x = random.randint(-PAGE_SCAN_START_X_MAX, -PAGE_SCAN_START_X_MIN)
     start_y = random.randint(-PAGE_SCAN_Y_RANGE_MAX, PAGE_SCAN_Y_RANGE_MAX)
     mouse_mover.quick_move_to_target(start_x, start_y)
-    # 移动到屏幕右侧，但随机化终点
+    
     end_x = random.randint(PAGE_SCAN_END_X_MIN, PAGE_SCAN_END_X_MAX)
     distance = end_x - start_x
-    # 增加更多步骤，模拟人类阅读时的不规则移动
-    steps = max(int(distance / SCAN_STEP_BASE_DISTANCE), PAGE_SCAN_STEPS_MIN)  # 增加步数，模拟更细致的扫描
+    steps = max(int(distance / SCAN_STEP_BASE_DISTANCE), PAGE_SCAN_STEPS_MIN)
     step_x = distance / steps
-    return {"start_x": start_x, "start_y": start_y, "end_x": end_x, "distance": distance, "steps": steps, "step_x": step_x, "current_step": 0, "current_y_offset": start_y, "scan_time": 0, "total_scan_time": random.uniform(PAGE_SCAN_STAY_TIME_MIN, PAGE_SCAN_STAY_TIME_MAX)}
+    
+    return {
+        "start_x": start_x,
+        "start_y": start_y,
+        "end_x": end_x,
+        "distance": distance,
+        "steps": steps,
+        "step_x": step_x,
+        "current_step": 0,
+        "current_x": start_x,
+        "current_y": start_y,
+        "scan_time": 0,
+        "total_scan_time": random.uniform(PAGE_SCAN_STAY_TIME_MIN, PAGE_SCAN_STAY_TIME_MAX),
+        "time_offset": time.monotonic()
+    }
 
 def start_exploratory_movement():
     """
@@ -303,73 +466,101 @@ def start_exploratory_movement():
 
 def update_web_browsing(state):
     """
-    更新网页浏览模拟，非阻塞，更自然的人类行为
+    更新网页浏览模拟，使用贝塞尔曲线（函数式实时计算）
     """
     current_time = time.monotonic()
-    if mouse_mover.active:
-        # 如果鼠标正在移动，更新移动状态
-        mouse_mover.update()
-        return False  # 未完成
+    
+    if state["current_step"] < state["total_steps"]:
+        target_x, target_y = calculate_bezier_point(
+            state["current_step"],
+            state["total_steps"],
+            state["start_x"],
+            state["start_y"],
+            state["target_x"],
+            state["target_y"],
+            state["control_x"],
+            state["control_y"]
+        )
+        
+        noise_x, noise_y = perlin_noise_2d(current_time - state["time_offset"], 0, 2.0)
+        target_x += noise_x * 0.5
+        target_y += noise_y * 0.5
+        
+        move_x = int(target_x - state["current_x"])
+        move_y = int(target_y - state["current_y"])
+        
+        if abs(move_x) > 0 or abs(move_y) > 0:
+            mouse.move(x=move_x, y=move_y)
+            state["current_x"] = target_x
+            state["current_y"] = target_y
+        
+        state["current_step"] += 1
+        return False
     elif state["small_moves_left"] > 0:
-        # 开始下一个小范围移动，更小的范围以模拟真实的鼠标操作
         small_move_x = random.randint(-WEB_BROWSE_SMALL_MOVE_X_MAX, WEB_BROWSE_SMALL_MOVE_X_MAX)
         small_move_y = random.randint(-WEB_BROWSE_SMALL_MOVE_Y_MAX, WEB_BROWSE_SMALL_MOVE_Y_MAX)
-        mouse_mover.smooth_move_small(state["current_x"], state["current_y"], state["current_x"] + small_move_x, state["current_y"] + small_move_y)
+        
+        noise_x, noise_y = perlin_noise_2d(current_time - state["time_offset"], 1, 3.0)
+        small_move_x += noise_x * 2
+        small_move_y += noise_y * 2
+        
+        mouse.move(x=int(small_move_x), y=int(small_move_y))
         state["current_x"] += small_move_x
         state["current_y"] += small_move_y
         state["small_moves_left"] -= 1
-        return False  # 未完成
+        return False
     elif state["time_at_location"] < state["total_time_at_location"]:
-        # 在当前位置停留一段时间，模拟阅读或思考
         if "start_time" not in state:
             state["start_time"] = current_time
         state["time_at_location"] = current_time - state["start_time"]
-        return False  # 未完成
+        return False
     else:
-        return True  # 完成
+        return True
 
 def update_page_scanning(state):
     """
-    更新页面扫描模拟，非阻塞，更自然的人类行为
+    更新页面扫描模拟，使用风力算法模拟眼球跳动
     """
     current_time = time.monotonic()
     if mouse_mover.active:
-        # 如果鼠标正在移动到起始点，更新移动状态
         mouse_mover.update()
-        return False  # 未完成
+        return False
     elif state["current_step"] < state["steps"]:
-        # 水平扫描，但加入垂直方向的轻微随机移动，模拟人类阅读时的不规则性
-        x_move = int(state["step_x"])
-        # 添加轻微的垂直偏移，模拟人类阅读时视线的微小变化
-        y_offset = random.randint(SCAN_Y_OFFSET_MIN, SCAN_Y_OFFSET_MAX)
+        x_move = state["step_x"]
+        y_move = 0
         
-        # 模拟人类阅读时的非匀速移动：有时快有时慢，偶尔停顿
+        wind_offset_x, wind_offset_y = apply_wind_effect(
+            x_move, y_move,
+            current_time - state["time_offset"] + state["current_step"] * 0.1,
+            wind_strength=3.0
+        )
+        
+        x_move = wind_offset_x
+        y_move = wind_offset_y
+        
         if state["current_step"] % random.randint(SCAN_PAUSE_INTERVAL_MIN, SCAN_PAUSE_INTERVAL_MAX) == 0:
-            # 随机决定是否停顿或放慢速度
             pause_or_slow = random.choice(["pause", "slow", "normal"])
             if pause_or_slow == "pause":
-                # 添加停顿，模拟阅读文字
-                return False  # 刻意不移动，模拟停顿
+                return False
             elif pause_or_slow == "slow":
-                # 减慢移动速度
-                x_move = int(x_move * SLOW_SPEED_FACTOR)
-                y_offset = int(y_offset * SLOW_SPEED_FACTOR)
+                x_move *= SLOW_SPEED_FACTOR
+                y_move *= SLOW_SPEED_FACTOR
         elif state["current_step"] % random.randint(SCAN_SLOWDOWN_INTERVAL_MIN, SCAN_SLOWDOWN_INTERVAL_MAX) == 0:
-            # 偶尔加速（移动稍大距离）
-            x_move = int(x_move * FAST_SPEED_FACTOR)
-            y_offset = int(y_offset * FAST_SPEED_FACTOR)
+            x_move *= FAST_SPEED_FACTOR
+            y_move *= FAST_SPEED_FACTOR
         
-        mouse.move(x=x_move, y=y_offset)
+        mouse.move(x=int(x_move), y=int(y_move))
+        state["current_x"] += x_move
+        state["current_y"] += y_move
         state["current_step"] += 1
-        return False  # 未完成
+        return False
     elif state["scan_time"] < state["total_scan_time"]:
-        # 扫描完成后在结尾处停留一段时间
         if "scan_start_time" not in state:
             state["scan_start_time"] = current_time
         state["scan_time"] = current_time - state["scan_start_time"]
-        return False  # 未完成
+        return False
     else:
-        return True  # 完成
+        return True
 
 def update_exploratory_movement(state):
     """
@@ -444,72 +635,79 @@ def update_random_movement(state):
 
 def start_circular_movement():
     """
-    启动圆形移动模式，模拟鼠标沿圆形轨迹移动
+    启动圆形移动模式，使用椭圆轨迹 + Perlin噪声
     """
     center_x = random.randint(-CIRCLE_CENTER_RANGE_MAX, CIRCLE_CENTER_RANGE_MAX)
     center_y = random.randint(-CIRCLE_CENTER_RANGE_MAX, CIRCLE_CENTER_RANGE_MAX)
-    radius = random.randint(CIRCLE_RADIUS_MIN, CIRCLE_RADIUS_MAX)
+    
+    base_radius = random.randint(CIRCLE_RADIUS_MIN, CIRCLE_RADIUS_MAX)
+    radius_x = base_radius * random.uniform(0.7, 1.3)
+    radius_y = base_radius * random.uniform(0.7, 1.3)
+    
     start_angle = random.uniform(0, 2 * 3.14159)
+    
     return {
         "center_x": center_x,
         "center_y": center_y,
-        "radius": radius,
+        "radius_x": radius_x,
+        "radius_y": radius_y,
         "current_angle": start_angle,
         "angle_step": random.uniform(CIRCLE_ANGLE_STEP_MIN, CIRCLE_ANGLE_STEP_MAX),
         "steps_completed": 0,
         "total_steps": random.randint(CIRCLE_TOTAL_STEPS_MIN, CIRCLE_TOTAL_STEPS_MAX),
         "time_at_location": 0,
-        "total_time_at_location": random.uniform(CIRCLE_STAY_TIME_MIN, CIRCLE_STAY_TIME_MAX)
+        "total_time_at_location": random.uniform(CIRCLE_STAY_TIME_MIN, CIRCLE_STAY_TIME_MAX),
+        "time_offset": time.monotonic()
     }
 
 def update_circular_movement(state):
     """
-    更新圆形移动模式，非阻塞
+    更新圆形移动模式，使用椭圆轨迹 + Perlin噪声（加速版）
     """
     current_time = time.monotonic()
     if state["steps_completed"] < state["total_steps"]:
-        # 计算圆形轨迹上的下一个点
-        new_x = int(state["center_x"] + state["radius"] * math.cos(state["current_angle"]))
-        new_y = int(state["center_y"] + state["radius"] * math.sin(state["current_angle"]))
+        new_x = state["center_x"] + state["radius_x"] * fast_cos(state["current_angle"])
+        new_y = state["center_y"] + state["radius_y"] * fast_sin(state["current_angle"])
         
-        # 初始化 prev_x 和 prev_y，如果是第一次移动
+        noise_x, noise_y = perlin_noise_2d(
+            current_time - state["time_offset"],
+            state["current_angle"],
+            1.5
+        )
+        new_x += noise_x * 2
+        new_y += noise_y * 2
+        
         if "prev_x" not in state or "prev_y" not in state:
             state["prev_x"] = new_x
             state["prev_y"] = new_y
         
-        # 移动到新位置
-        actual_x = new_x - state["prev_x"]
-        actual_y = new_y - state["prev_y"]
+        actual_x = int(new_x - state["prev_x"])
+        actual_y = int(new_y - state["prev_y"])
         
         mouse.move(x=actual_x, y=actual_y)
         
-        # 更新状态
         state["prev_x"] = new_x
         state["prev_y"] = new_y
         state["current_angle"] += state["angle_step"]
         state["steps_completed"] += 1
         
-        # 大幅降低改变移动速度的概率，减小角速度变化幅度
         if random.random() < CIRCLE_SPEED_CHANGE_PROBABILITY and state["steps_completed"] > 5:
-            # 减小角速度变化范围
-            change_factor = random.uniform(0.9, 1.1)  # 更小的变化范围
+            change_factor = random.uniform(0.9, 1.1)
             state["angle_step"] *= change_factor
-            # 确保角速度变化不会太大
             state["angle_step"] = max(CIRCLE_NEW_ANGLE_STEP_MIN, min(CIRCLE_NEW_ANGLE_STEP_MAX, state["angle_step"]))
         
-        return False  # 未完成
+        return False
     elif state["time_at_location"] < state["total_time_at_location"]:
-        # 在圆形移动完成后停留一段时间
         if "location_start_time" not in state:
             state["location_start_time"] = current_time
         state["time_at_location"] = current_time - state["location_start_time"]
-        return False  # 未完成
+        return False
     else:
-        return True  # 完成
+        return True
 
 def start_target_focus():
     """
-    启动目标聚焦模式，模拟用户专注于某个区域的行为
+    启动目标聚焦模式，使用重力算法 + Perlin噪声
     """
     center_x = random.randint(-TARGET_FOCUS_RANGE_MAX, TARGET_FOCUS_RANGE_MAX)
     center_y = random.randint(-TARGET_FOCUS_RANGE_MAX, TARGET_FOCUS_RANGE_MAX)
@@ -517,42 +715,65 @@ def start_target_focus():
     return {
         "center_x": center_x,
         "center_y": center_y,
+        "current_x": 0,
+        "current_y": 0,
         "focus_duration": 0,
         "total_focus_duration": random.uniform(TARGET_FOCUS_STAY_TIME_MIN, TARGET_FOCUS_STAY_TIME_MAX),
-        "micro_movements_left": random.randint(TARGET_FOCUS_MICRO_MOVES_MIN, TARGET_FOCUS_MICRO_MOVES_MAX)
+        "micro_movements_left": random.randint(TARGET_FOCUS_MICRO_MOVES_MIN, TARGET_FOCUS_MICRO_MOVES_MAX),
+        "time_offset": time.monotonic()
     }
 
 def update_target_focus(state):
     """
-    更新目标聚焦模式，非阻塞
+    更新目标聚焦模式，使用重力算法向中心拉近
     """
     current_time = time.monotonic()
     if mouse_mover.active:
-        # 如果鼠标正在移动，更新移动状态
         mouse_mover.update()
-        return False  # 未完成
+        return False
     elif state["micro_movements_left"] > 0:
-        # 在焦点区域内进行微小移动
-        micro_x = random.randint(-TARGET_FOCUS_MICRO_MOVE_MAX, TARGET_FOCUS_MICRO_MOVE_MAX)
-        micro_y = random.randint(-TARGET_FOCUS_MICRO_MOVE_MAX, TARGET_FOCUS_MICRO_MOVE_MAX)
+        pull_x, pull_y = apply_gravity_pull(
+            state["current_x"],
+            state["current_y"],
+            state["center_x"],
+            state["center_y"],
+            strength=0.15
+        )
+        
+        noise_x, noise_y = perlin_noise_2d(
+            current_time - state["time_offset"],
+            state["micro_movements_left"],
+            3.0
+        )
+        
+        micro_x = int(pull_x + noise_x * 3)
+        micro_y = int(pull_y + noise_y * 3)
+        
         mouse.move(x=micro_x, y=micro_y)
+        state["current_x"] += micro_x
+        state["current_y"] += micro_y
         state["micro_movements_left"] -= 1
-        return False  # 未完成
+        return False
     elif state["focus_duration"] < state["total_focus_duration"]:
-        # 在目标区域停留，偶尔进行微小移动
         if "focus_start_time" not in state:
             state["focus_start_time"] = current_time
         state["focus_duration"] = current_time - state["focus_start_time"]
         
-        # 概率进行微小移动
         if random.random() < TARGET_FOCUS_ADDITIONAL_MOVE_PROBABILITY:
-            micro_x = random.randint(-TARGET_FOCUS_ADDITIONAL_MOVE_MAX, TARGET_FOCUS_ADDITIONAL_MOVE_MAX)
-            micro_y = random.randint(-TARGET_FOCUS_ADDITIONAL_MOVE_MAX, TARGET_FOCUS_ADDITIONAL_MOVE_MAX)
+            noise_x, noise_y = perlin_noise_2d(
+                current_time - state["time_offset"] + 100,
+                state["focus_duration"],
+                2.0
+            )
+            micro_x = int(noise_x * 5)
+            micro_y = int(noise_y * 5)
             mouse.move(x=micro_x, y=micro_y)
+            state["current_x"] += micro_x
+            state["current_y"] += micro_y
         
-        return False  # 未完成
+        return False
     else:
-        return True  # 完成
+        return True
 
 # 上下文管理类
 class MouseContext:
@@ -592,10 +813,10 @@ def update_led_for_mode(context, mode, is_active=True):
         elif mode == "target_focus":
             context.led_mode_color = TARGET_FOCUS_COLOR
         # 设置为正常亮度
-        set_led_color_with_brightness(context.led_mode_color, BREATHE_MAX_BRIGHTNESS)
+        led_controller.set_color_with_brightness(context.led_mode_color, BREATHE_MAX_BRIGHTNESS)
     else:
         # 设置为低亮度
-        set_led_color_with_brightness(context.led_mode_color, BREATHE_MIN_BRIGHTNESS)
+        led_controller.set_color_with_brightness(context.led_mode_color, BREATHE_MIN_BRIGHTNESS)
 
 def start_breathing_led(context, duration=1.0):
     """
@@ -610,9 +831,49 @@ def update_breathing_led_task(context):
     更新呼吸灯任务
     """
     if context.breathing_active:
-        update_breathing_led(context.led_mode_color)
+        led_controller.update_breathing(context.led_mode_color)
         if time.monotonic() - context.breathing_start_time >= context.breathing_duration:
             context.breathing_active = False
+
+# 模式处理器映射表（优化重复代码）
+MODE_HANDLERS = {
+    "web_browsing": {
+        "update": update_web_browsing,
+        "start": start_web_browsing,
+        "wait_min": lambda: POST_MODE_WAIT_TIME_WEB_BROWSING_MIN,
+        "wait_max": lambda: POST_MODE_WAIT_TIME_WEB_BROWSING_MAX
+    },
+    "page_scanning": {
+        "update": update_page_scanning,
+        "start": start_page_scanning,
+        "wait_min": lambda: POST_MODE_WAIT_TIME_PAGE_SCANNING_MIN,
+        "wait_max": lambda: POST_MODE_WAIT_TIME_PAGE_SCANNING_MAX
+    },
+    "exploratory_move": {
+        "update": update_exploratory_movement,
+        "start": start_exploratory_movement,
+        "wait_min": lambda: POST_MODE_WAIT_TIME_EXPLORATORY_MIN,
+        "wait_max": lambda: POST_MODE_WAIT_TIME_EXPLORATORY_MAX
+    },
+    "random_movement": {
+        "update": update_random_movement,
+        "start": start_random_movement,
+        "wait_min": lambda: POST_MODE_WAIT_TIME_RANDOM_MIN,
+        "wait_max": lambda: POST_MODE_WAIT_TIME_RANDOM_MAX
+    },
+    "circular_move": {
+        "update": update_circular_movement,
+        "start": start_circular_movement,
+        "wait_min": lambda: POST_MODE_WAIT_TIME_CIRCULAR_MIN,
+        "wait_max": lambda: POST_MODE_WAIT_TIME_CIRCULAR_MAX
+    },
+    "target_focus": {
+        "update": update_target_focus,
+        "start": start_target_focus,
+        "wait_min": lambda: POST_MODE_WAIT_TIME_TARGET_FOCUS_MIN,
+        "wait_max": lambda: POST_MODE_WAIT_TIME_TARGET_FOCUS_MAX
+    }
+}
 
 def check_and_start_next_mode(context):
     """
@@ -632,19 +893,10 @@ def check_and_start_next_mode(context):
     update_led_for_mode(context, action, True)
     context.current_mode = action
     
-    # 根据模式启动相应的模拟
-    if action == "web_browsing":
-        context.current_state = start_web_browsing()
-    elif action == "page_scanning":
-        context.current_state = start_page_scanning()
-    elif action == "exploratory_move":
-        context.current_state = start_exploratory_movement()
-    elif action == "random_movement":
-        context.current_state = start_random_movement()
-    elif action == "circular_move":
-        context.current_state = start_circular_movement()
-    elif action == "target_focus":
-        context.current_state = start_target_focus()
+    # 使用映射表启动相应的模拟（优化后的代码）
+    handler = MODE_HANDLERS.get(action)
+    if handler:
+        context.current_state = handler["start"]()
     
     context.mode_start_time = time.monotonic()
     # 设置一个更长的模式持续时间，降低切换频率
@@ -652,75 +904,78 @@ def check_and_start_next_mode(context):
 
 # 初始化上下文
 def main():
-    # 初始化上下文
-    context = init_context()
+    """主函数，包含异常处理"""
+    try:
+        # 初始化上下文
+        context = init_context()
 
-    # 主事件循环
-    last_update_time = time.monotonic()
+        # 主事件循环
+        last_update_time = time.monotonic()
 
-    while True:
-        current_time = time.monotonic()
-        
-        # 限制更新频率，避免过度占用CPU
-        if current_time - last_update_time >= UPDATE_INTERVAL:  # 每10ms更新一次
-            last_update_time = current_time
+        while True:
+            current_time = time.monotonic()
             
-            # 更新呼吸灯效果
-            if not context.breathing_active and context.current_mode:
-                update_breathing_led(context.led_mode_color)
-            
-            # 根据当前模式更新模拟状态
-            if context.current_mode == "web_browsing" and context.current_state:
-                if update_web_browsing(context.current_state):
-                    # 模式完成，设置等待时间
-                    update_led_for_mode(context, context.current_mode, False)
-                    context.post_mode_wait_time = current_time
-                    context.post_mode_wait_duration = random.uniform(POST_MODE_WAIT_TIME_WEB_BROWSING_MIN, POST_MODE_WAIT_TIME_WEB_BROWSING_MAX)
-                    context.current_mode = None
-            elif context.current_mode == "page_scanning" and context.current_state:
-                if update_page_scanning(context.current_state):
-                    # 模式完成，设置等待时间
-                    update_led_for_mode(context, context.current_mode, False)
-                    context.post_mode_wait_time = current_time
-                    context.post_mode_wait_duration = random.uniform(POST_MODE_WAIT_TIME_PAGE_SCANNING_MIN, POST_MODE_WAIT_TIME_PAGE_SCANNING_MAX)
-                    context.current_mode = None
-            elif context.current_mode == "exploratory_move" and context.current_state:
-                if update_exploratory_movement(context.current_state):
-                    # 模式完成，设置等待时间
-                    update_led_for_mode(context, context.current_mode, False)
-                    context.post_mode_wait_time = current_time
-                    context.post_mode_wait_duration = random.uniform(POST_MODE_WAIT_TIME_EXPLORATORY_MIN, POST_MODE_WAIT_TIME_EXPLORATORY_MAX)
-                    context.current_mode = None
-            elif context.current_mode == "random_movement" and context.current_state:
-                if update_random_movement(context.current_state):
-                    # 模式完成，设置等待时间
-                    update_led_for_mode(context, context.current_mode, False)
-                    context.post_mode_wait_time = current_time
-                    context.post_mode_wait_duration = random.uniform(POST_MODE_WAIT_TIME_RANDOM_MIN, POST_MODE_WAIT_TIME_RANDOM_MAX)
-                    context.current_mode = None
-            elif context.current_mode == "circular_move" and context.current_state:
-                if update_circular_movement(context.current_state):
-                    # 模式完成，设置等待时间
-                    update_led_for_mode(context, context.current_mode, False)
-                    context.post_mode_wait_time = current_time
-                    context.post_mode_wait_duration = random.uniform(POST_MODE_WAIT_TIME_CIRCULAR_MIN, POST_MODE_WAIT_TIME_CIRCULAR_MAX)
-                    context.current_mode = None
-            elif context.current_mode == "target_focus" and context.current_state:
-                if update_target_focus(context.current_state):
-                    # 模式完成，设置等待时间
-                    update_led_for_mode(context, context.current_mode, False)
-                    context.post_mode_wait_time = current_time
-                    context.post_mode_wait_duration = random.uniform(POST_MODE_WAIT_TIME_TARGET_FOCUS_MIN, POST_MODE_WAIT_TIME_TARGET_FOCUS_MAX)
-                    context.current_mode = None
-            
-            # 检查是否需要启动新模式
-            if context.current_mode is None and current_time - context.post_mode_wait_time >= context.post_mode_wait_duration:
-                check_and_start_next_mode(context)
-                # 启动短暂的呼吸灯效果以示活跃
-                start_breathing_led(context, 0.5)
-            
-            # 更新呼吸灯任务（如果活动）
-            update_breathing_led_task(context)
+            # 限制更新频率，避免过度占用CPU
+            if current_time - last_update_time >= UPDATE_INTERVAL:  # 每8ms更新一次（125Hz，匹配USB HID回报率）
+                last_update_time = current_time
+                
+                # 更新呼吸灯效果
+                if not context.breathing_active and context.current_mode:
+                    led_controller.update_breathing(context.led_mode_color)
+                
+                # 根据当前模式更新模拟状态（优化后的统一处理）
+                if context.current_mode and context.current_state:
+                    handler = MODE_HANDLERS.get(context.current_mode)
+                    if handler:
+                        update_func = handler["update"]
+                        if update_func(context.current_state):
+                            # 模式完成，设置等待时间
+                            update_led_for_mode(context, context.current_mode, False)
+                            context.post_mode_wait_time = current_time
+                            context.post_mode_wait_duration = random.uniform(
+                                handler["wait_min"](),
+                                handler["wait_max"]()
+                            )
+                            context.current_mode = None
+                
+                # 检查是否需要启动新模式
+                if context.current_mode is None and current_time - context.post_mode_wait_time >= context.post_mode_wait_duration:
+                    check_and_start_next_mode(context)
+                    # 启动短暂的呼吸灯效果以示活跃
+                    start_breathing_led(context, 0.5)
+                
+                # 更新呼吸灯任务（如果活动）
+                update_breathing_led_task(context)
+    
+    except KeyboardInterrupt:
+        # 用户中断（Ctrl+C），正常退出
+        print("程序被用户中断")
+        pixels.fill((0, 0, 0))
+        pixels.show()
+    
+    except OSError as e:
+        # USB 设备错误或其他 I/O 错误
+        print(f"USB/IO 错误: {e}")
+        # 闪烁红色 LED 指示错误
+        for _ in range(10):
+            pixels.fill((255, 0, 0))
+            pixels.show()
+            time.sleep(0.2)
+            pixels.fill((0, 0, 0))
+            pixels.show()
+            time.sleep(0.2)
+    
+    except Exception as e:
+        # 捕获所有其他异常
+        print(f"未知错误: {e}")
+        # 快速闪烁红色 LED 指示严重错误
+        for _ in range(20):
+            pixels.fill((255, 0, 0))
+            pixels.show()
+            time.sleep(0.1)
+            pixels.fill((0, 0, 0))
+            pixels.show()
+            time.sleep(0.1)
 
 # 启动主程序
 if __name__ == "__main__":
