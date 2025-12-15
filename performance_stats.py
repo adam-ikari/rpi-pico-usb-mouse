@@ -29,6 +29,14 @@ class PerformanceStats:
         
         self.mem_free_start = gc.mem_free() if hasattr(gc, 'mem_free') else 0
         self.mem_free_min = self.mem_free_start
+        
+        # 分段性能统计
+        self.segment_times = {
+            'led_update': [],
+            'mode_update': [],
+            'mouse_move': []
+        }
+        self.segment_start = 0
     
     def record_loop(self):
         if not self.enable_stats:
@@ -82,10 +90,19 @@ class PerformanceStats:
         if not self.enable_stats:
             return
         
-        if self.loop_count % 100 == 0 and hasattr(gc, 'mem_free'):
-            mem_free = gc.mem_free()
-            if mem_free < self.mem_free_min:
-                self.mem_free_min = mem_free
+        # 提高采样频率并主动触发 GC
+        if self.loop_count % 50 == 0:
+            if hasattr(gc, 'collect'):
+                gc.collect()  # 主动回收
+            
+            if hasattr(gc, 'mem_free'):
+                mem_free = gc.mem_free()
+                if mem_free < self.mem_free_min:
+                    self.mem_free_min = mem_free
+                
+                # 检测内存泄漏
+                if self.loop_count > 1000 and mem_free < self.mem_free_start * 0.7:
+                    print("[WARNING] Memory usage >30%, potential leak")
     
     def get_avg_frame_time(self):
         if not self.frame_times:
@@ -98,6 +115,19 @@ class PerformanceStats:
             fps = 1.0 / avg_frame_time
             return min(fps, 1000)   # 限制最大 FPS 为 1000
         return 0
+    
+    def get_1_percent_low(self):
+        """计算 1% low 帧时间（最差的 1% 帧的平均帧时间）"""
+        if not self.frame_times or len(self.frame_times) < 10:
+            return 0
+        
+        # 排序并取最差的 1%
+        sorted_times = sorted(self.frame_times, reverse=True)
+        one_percent_count = max(1, len(sorted_times) // 100)
+        worst_frames = sorted_times[:one_percent_count]
+        
+        avg_worst = sum(worst_frames) / len(worst_frames)
+        return avg_worst
     
     def get_uptime(self):
         return time.monotonic() - self.start_time
@@ -117,11 +147,14 @@ class PerformanceStats:
         avg_fps = self.get_fps()
         avg_frame = self.get_avg_frame_time() * 1000
         
+        one_percent_low = self.get_1_percent_low() * 1000  # 转为毫秒
+        
         report = []
         report.append("=== Perf ===")
         report.append(f"Up: {uptime:.0f}s | Loops: {self.loop_count}")
         report.append(f"FPS: {avg_fps:.1f}")
         report.append(f"Frame: {avg_frame:.1f}/{self.min_frame_time*1000:.1f}/{self.max_frame_time*1000:.1f}ms")
+        report.append(f"1% Low: {one_percent_low:.1f}ms")
         
         if hasattr(gc, 'mem_free'):
             mem_free = gc.mem_free()
@@ -139,6 +172,14 @@ class PerformanceStats:
         
         if self.bezier_calc_count > 0 or self.trig_call_count > 0:
             report.append(f"Math: B={self.bezier_calc_count} T={self.trig_call_count}")
+        
+        # 分段性能统计
+        for segment, times in self.segment_times.items():
+            if times:
+                avg = sum(times) / len(times)
+                max_time = max(times)
+                if avg > 1.0 or max_time > 5.0:  # 只显示显著的
+                    report.append(f"{segment}: {avg:.1f}ms avg, {max_time:.1f}ms max")
         
         return "\n".join(report)
     
@@ -183,3 +224,20 @@ class PerformanceStats:
                 self.record_trig_call()
             return func(*args, **kwargs)
         return wrapper
+    
+    def segment_start_timing(self):
+        """开始分段计时"""
+        if self.enable_stats:
+            self.segment_start = time.monotonic()
+    
+    def segment_end_timing(self, segment_name):
+        """结束分段计时"""
+        if self.enable_stats and self.segment_start > 0:
+            elapsed = (time.monotonic() - self.segment_start) * 1000  # 转为毫秒
+            if segment_name in self.segment_times:
+                times = self.segment_times[segment_name]
+                if len(times) < 50:
+                    times.append(elapsed)
+                else:
+                    times[self.loop_count % 50] = elapsed
+            self.segment_start = 0

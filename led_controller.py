@@ -15,6 +15,10 @@ class LEDController:
         self.perf_stats = perf_stats
         self.last_time = time.monotonic()
         
+        # LED 更新频率限制（30Hz）
+        self.last_led_update = 0
+        self.led_update_interval = 0.033  # 33ms = 30Hz
+        
         # 呼吸灯状态
         self.current_brightness_int = 100
         self.brightness_direction = -1
@@ -66,6 +70,12 @@ class LEDController:
     def update(self):
         """更新LED状态（颜色过渡 + 亮度控制）"""
         current_time = time.monotonic()
+        
+        # 频率限制：30Hz 更新
+        if current_time - self.last_led_update < self.led_update_interval:
+            return
+        self.last_led_update = current_time
+        
         time_delta = min(current_time - self.last_time, TRANSITION_TIME_DELTA_LIMIT)
         self.last_time = current_time
         

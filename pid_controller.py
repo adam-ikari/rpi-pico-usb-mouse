@@ -138,15 +138,31 @@ class PIDController:
         
         return val
     
-    def _fast_sin(self, angle):
-        """快速 sin 近似（泰勒级数）"""
+    # 类级别查找表（所有实例共享）
+    _SIN_LUT = None
+    
+    @classmethod
+    def _init_sin_lut(cls):
+        """初始化 sin 查找表（仅一次）"""
+        if cls._SIN_LUT is not None:
+            return
         import math
-        return math.sin(angle)
+        # 360 个采样点，精度 1 度
+        cls._SIN_LUT = [int(math.sin(i * 0.017453292519943295) * 10000) for i in range(361)]
+    
+    def _fast_sin(self, angle):
+        """快速 sin（查找表）"""
+        if self._SIN_LUT is None:
+            self._init_sin_lut()
+        
+        # 转换为角度 (0-360)
+        angle_deg = int((angle * 57.2957795) % 360)
+        return self._SIN_LUT[angle_deg] / 10000
     
     def _fast_cos(self, angle):
-        """快速 cos 近似（泰勒级数）"""
-        import math
-        return math.cos(angle)
+        """快速 cos（查找表）"""
+        # cos(x) = sin(x + π/2)
+        return self._fast_sin(angle + 1.5708)
     
     def reset(self):
         """重置 PID 状态"""

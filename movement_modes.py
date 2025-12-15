@@ -328,6 +328,19 @@ class RandomMovementMode(MovementMode):
 class CircularMovementMode(MovementMode):
     """圆形移动模式 - 使用椭圆轨迹 + Perlin噪声"""
     
+    # 类级别共享查找表（所有实例共享）
+    _SIN_LUT = None
+    
+    @classmethod
+    def _init_trig_lut(cls):
+        """初始化三角函数查找表（仅初始化一次）"""
+        if cls._SIN_LUT is not None:
+            return
+        
+        import math
+        # 360个采样点，精度1度
+        cls._SIN_LUT = [int(math.sin(i * 0.017453292519943295) * 10000) for i in range(361)]
+    
     def start(self):
         center_x = range_manager.randint('circle_center')
         center_y = range_manager.randint('circle_center')
@@ -409,42 +422,27 @@ class CircularMovementMode(MovementMode):
         return POST_MODE_WAIT_TIME_CIRCULAR_MIN, POST_MODE_WAIT_TIME_CIRCULAR_MAX
     
     def _fast_sin(self, angle_rad):
-        """快速sin计算（查表法）"""
+        """快速sin计算（使用类级别查找表）"""
         if self.perf_stats and self.perf_stats.enable_stats:
             self.perf_stats.record_trig_call()
-        return self._fast_sin_impl(angle_rad)
-    
-    def _fast_cos(self, angle_rad):
-        """快速cos计算（查表法）"""
-        if self.perf_stats and self.perf_stats.enable_stats:
-            self.perf_stats.record_trig_call()
-        return self._fast_cos_impl(angle_rad)
-    
-    def _fast_sin_impl(self, angle_rad):
-        if not hasattr(self, '_trig_lut_initialized'):
+        
+        # 确保查找表已初始化
+        if self._SIN_LUT is None:
             self._init_trig_lut()
         
-        angle_deg = int((angle_rad * 573) // 10) % 360
+        # 转换为角度 (0-360)
+        angle_deg = int((angle_rad * 57.2957795) % 360)
         
-        if angle_deg <= 90:
-            return self._sin_lut_int[angle_deg] / 10000
-        elif angle_deg <= 180:
-            return self._sin_lut_int[180 - angle_deg] / 10000
-        elif angle_deg <= 270:
-            return -self._sin_lut_int[angle_deg - 180] / 10000
-        else:
-            return -self._sin_lut_int[360 - angle_deg] / 10000
+        # 查表
+        return self._SIN_LUT[angle_deg] / 10000
     
-    def _fast_cos_impl(self, angle_rad):
-        return self._fast_sin_impl(angle_rad + 1.5708)
-    
-    def _init_trig_lut(self):
-        self._sin_lut_int = []
-        for i in range(91):
-            angle_rad = i * 0.017453292519943295
-            sin_val = math.sin(angle_rad)
-            self._sin_lut_int.append(int(sin_val * 10000))
-        self._trig_lut_initialized = True
+    def _fast_cos(self, angle_rad):
+        """快速cos计算（sin(x + 90°)）"""
+        if self.perf_stats and self.perf_stats.enable_stats:
+            self.perf_stats.record_trig_call()
+        
+        # cos(x) = sin(x + π/2)
+        return self._fast_sin(angle_rad + 1.5708)
     
     
 
