@@ -7,6 +7,10 @@ import board
 import neopixel
 from pin_config import LED_PIN
 from constants import *
+from performance_stats import PerformanceStats
+from serial_control import SerialControl
+
+ENABLE_PERFORMANCE_STATS = False
 
 # 数学常量
 PI = 3.141592653589793
@@ -83,9 +87,11 @@ def _init_trig_lut():
             _SIN_LUT.append(math.sin(angle_rad))
             _COS_LUT.append(math.cos(angle_rad))
 
-def fast_sin(angle_rad):
+_perf_stats_global = None
+
+def _fast_sin_impl(angle_rad):
     """
-    快速sin计算（查表法）
+    快速sin计算实现（查表法）
     angle_rad: 弧度值
     返回: sin值
     """
@@ -96,9 +102,15 @@ def fast_sin(angle_rad):
     angle_deg = int((angle_rad * RAD_TO_DEG) % 360)
     return _SIN_LUT[angle_deg]
 
-def fast_cos(angle_rad):
+def fast_sin(angle_rad):
+    """快速sin计算（带性能统计）"""
+    if _perf_stats_global and _perf_stats_global.enable_stats:
+        _perf_stats_global.record_trig_call()
+    return _fast_sin_impl(angle_rad)
+
+def _fast_cos_impl(angle_rad):
     """
-    快速cos计算（查表法）
+    快速cos计算实现（查表法）
     angle_rad: 弧度值
     返回: cos值
     """
@@ -108,6 +120,12 @@ def fast_cos(angle_rad):
     # 将弧度转换为度数索引
     angle_deg = int((angle_rad * RAD_TO_DEG) % 360)
     return _COS_LUT[angle_deg]
+
+def fast_cos(angle_rad):
+    """快速cos计算（带性能统计）"""
+    if _perf_stats_global and _perf_stats_global.enable_stats:
+        _perf_stats_global.record_trig_call()
+    return _fast_cos_impl(angle_rad)
 
 # ==================== 算法辅助函数 ====================
 
@@ -164,6 +182,9 @@ def calculate_bezier_point(step, total_steps, start_x, start_y, end_x, end_y, co
     函数式计算二次贝塞尔曲线上的单个点（零内存消耗，性能优化）
     根据当前步数实时计算，无需存储完整路径
     """
+    if _perf_stats_global and _perf_stats_global.enable_stats:
+        _perf_stats_global.record_bezier_calc()
+    
     t = step / max(total_steps - 1, 1)
     x = quadratic_bezier(t, start_x, control_x, end_x)
     y = quadratic_bezier(t, start_y, control_y, end_y)
@@ -392,8 +413,20 @@ def init_context():
     """
     初始化上下文并启动第一个模式
     """
+    global _perf_stats_global
+    perf_stats = PerformanceStats(enable_stats=ENABLE_PERFORMANCE_STATS)
+    _perf_stats_global = perf_stats
+    serial_control = SerialControl(perf_stats=perf_stats)
     context = MouseContext()
+    context.perf_stats = perf_stats
+    context.serial_control = serial_control
     check_and_start_next_mode(context)
+    
+    if serial_control.serial_available:
+        print("=== Mouse Movement Simulator ===")
+        print("Serial control enabled. Type 'help' for commands.")
+        print("================================")
+    
     return context
 
 # 非阻塞模拟函数
@@ -799,6 +832,9 @@ def update_led_for_mode(context, mode, is_active=True):
     """
     context.current_mode = mode
     
+    if hasattr(context, 'perf_stats'):
+        context.perf_stats.record_mode_switch(mode)
+    
     if is_active:
         if mode == "web_browsing":
             context.led_mode_color = WEB_BROWSING_COLOR
@@ -915,9 +951,19 @@ def main():
         while True:
             current_time = time.monotonic()
             
+            if hasattr(context, 'serial_control'):
+                context.serial_control.check_commands()
+            
             # 限制更新频率，避免过度占用CPU
             if current_time - last_update_time >= UPDATE_INTERVAL:  # 每8ms更新一次（125Hz，匹配USB HID回报率）
                 last_update_time = current_time
+                
+                if hasattr(context, 'perf_stats'):
+                    context.perf_stats.record_loop()
+                    context.perf_stats.update_memory_stats()
+                    
+                    if context.perf_stats.should_report(PERFORMANCE_REPORT_INTERVAL):
+                        context.perf_stats.print_report()
                 
                 # 更新呼吸灯效果
                 if not context.breathing_active and context.current_mode:
