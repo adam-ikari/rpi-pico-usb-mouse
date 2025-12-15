@@ -23,16 +23,32 @@ class FastRandom:
         self.state ^= (self.state >> 17) & 0xFFFFFFFF
         self.state ^= (self.state << 5) & 0xFFFFFFFF
         
-        # 转换为 [0, 1) 范围的浮点数
-        return (self.state & 0x7FFFFFFF) / 2147483648.0
+        # 使用位移和整数运算，返回 [0, 1) 范围的浮点数
+        # 取低16位，除以65536
+        return (self.state & 0xFFFF) / 65536.0
+    
+    def random_int16(self):
+        """生成 [0, 65535) 范围内的16位整数（定点数优化）"""
+        self.state ^= (self.state << 13) & 0xFFFFFFFF
+        self.state ^= (self.state >> 17) & 0xFFFFFFFF
+        self.state ^= (self.state << 5) & 0xFFFFFFFF
+        return (self.state & 0xFFFF)
     
     def randint(self, a, b):
-        """生成 [a, b] 范围内的随机整数"""
-        return a + int(self.random() * (b - a + 1))
+        """生成 [a, b] 范围内的随机整数（优化版本）"""
+        range_size = b - a + 1
+        # 使用整数运算代替浮点运算
+        rand_int = self.random_int16()
+        return a + (rand_int * range_size) // 65536
     
     def uniform(self, a, b):
-        """生成 [a, b) 范围内的随机浮点数"""
-        return a + self.random() * (b - a)
+        """生成 [a, b) 范围内的随机浮点数（优化版本）"""
+        # 使用整数运算减少浮点运算
+        range_val = b - a
+        # 使用16位整数随机数代替浮点随机数
+        rand_int = self.random_int16()
+        # rand_int / 65536 * range_val + a
+        return a + (rand_int * range_val) / 65536
     
     def choice(self, seq):
         """从序列中随机选择一个元素"""
@@ -89,9 +105,9 @@ class RandomPool:
             return self.generator.randint(a, b)
     
     def uniform(self, a, b):
-        """获取随机浮点数 - 使用时间换空间策略"""
+        """获取随机浮点数 - 使用时间换空间策略（优化版本）"""
         self.current_index += 1
-        return self.generator.random() * (b - a) + a
+        return self.generator.uniform(a, b)
     
     def choice(self, seq):
         """从序列中随机选择一个元素"""
@@ -118,14 +134,18 @@ class WeightedRandom:
             self.cumulative_weights.append(self.total_weight)
     
     def choice(self):
-        """根据权重随机选择一个项目"""
+        """根据权重随机选择一个项目（优化版本）"""
         if not self.items:
             return None
         
         if self.total_weight == 0:
             return self.items[0] if self.items else None
         
-        r = FastRandom().random() * self.total_weight
+        # 使用整数运算代替浮点运算
+        # 生成 [0, total_weight) 范围内的整数
+        rand_gen = FastRandom()
+        rand_int = rand_gen.random_int16()
+        r = (rand_int * self.total_weight) >> 16  # 除以65536
         
         for i, cumulative_weight in enumerate(self.cumulative_weights):
             if r <= cumulative_weight:
@@ -163,9 +183,9 @@ class RandomRangeManager:
         return self.generator.randint(a, b)
     
     def randuniform(self, range_name):
-        """在指定范围内生成随机浮点数"""
+        """在指定范围内生成随机浮点数（优化版本）"""
         a, b = self.get_range(range_name)
-        return self.generator.random() * (b - a) + a
+        return self.generator.uniform(a, b)
 
 
 # 全局随机数生成器实例

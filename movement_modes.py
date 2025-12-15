@@ -425,29 +425,43 @@ class CircularMovementMode(MovementMode):
         return self._fast_cos_impl(angle_rad)
     
     def _fast_sin_impl(self, angle_rad):
-        """快速sin计算实现（查表法）"""
-        if not hasattr(self, '_sin_lut'):
+        """快速sin计算实现（查表法 + 对称性）"""
+        if not hasattr(self, '_trig_lut_initialized'):
             self._init_trig_lut()
         
-        angle_deg = int((angle_rad * 57.29577951308232) % 360)
-        return self._sin_lut[angle_deg]
+        # 转换为度数（使用整数运算）
+        # angle_deg = angle_rad * 180 / π
+        # 使用近似：180/π ≈ 57.296
+        angle_deg = int((angle_rad * 573) // 10) % 360
+        
+        # 使用对称性
+        if angle_deg <= 90:
+            return self._sin_lut_int[angle_deg] / 10000
+        elif angle_deg <= 180:
+            return self._sin_lut_int[180 - angle_deg] / 10000
+        elif angle_deg <= 270:
+            return -self._sin_lut_int[angle_deg - 180] / 10000
+        else:
+            return -self._sin_lut_int[360 - angle_deg] / 10000
     
     def _fast_cos_impl(self, angle_rad):
-        """快速cos计算实现（查表法）"""
-        if not hasattr(self, '_cos_lut'):
-            self._init_trig_lut()
-        
-        angle_deg = int((angle_rad * 57.29577951308232) % 360)
-        return self._cos_lut[angle_deg]
+        """快速cos计算实现（使用 sin 的对称性）"""
+        # cos(x) = sin(x + 90°)
+        return self._fast_sin_impl(angle_rad + 1.5708)  # +π/2
     
     def _init_trig_lut(self):
-        """初始化三角函数查找表"""
-        self._sin_lut = []
-        self._cos_lut = []
-        for i in range(360):
-            angle_rad = i * 0.017453292519943295
-            self._sin_lut.append(math.sin(angle_rad))
-            self._cos_lut.append(math.cos(angle_rad))
+        """初始化三角函数查找表（优化版本）"""
+        # 只存储 0-90 度的值，其他象限通过对称性计算
+        # 使用整数存储（乘以 10000）以避免浮点数
+        self._sin_lut_int = []
+        for i in range(91):
+            # 使用 math.sin 计算一次，然后转为整数存储
+            angle_rad = i * 0.017453292519943295  # i * π/180
+            sin_val = math.sin(angle_rad)
+            self._sin_lut_int.append(int(sin_val * 10000))
+        
+        # 标记已初始化
+        self._trig_lut_initialized = True
     
     
 

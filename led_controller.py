@@ -14,8 +14,9 @@ class LEDController:
         self.pixels = pixels
         self.perf_stats = perf_stats
         self.last_time = time.monotonic()
-        self.current_brightness = BREATHE_MAX_BRIGHTNESS
-        self.brightness_direction = -0.01
+        # 使用整数表示亮度（0-100，对应 0.0-1.0）
+        self.current_brightness_int = 100  # 100 = 1.0
+        self.brightness_direction = -1  # -1 表示减少
         self.transition_start_time = None
         self.transition_duration = 0
     
@@ -26,21 +27,28 @@ class LEDController:
         self.pixels.show()
     
     def update_breathing(self, color):
-        """非阻塞更新呼吸灯效果"""
+        """非阻塞更新呼吸灯效果（整数优化版本）"""
         current_time = time.monotonic()
         time_delta = min(current_time - self.last_time, TRANSITION_TIME_DELTA_LIMIT)
         self.last_time = current_time
         
-        self.current_brightness += self.brightness_direction * (time_delta / max(BRIGHTNESS_CHANGE_SPEED_FACTOR, 0.001))
+        # 使用整数运算
+        # time_delta / 0.005 ≈ time_delta * 200
+        # 亮度变化：direction * (time_delta * 200)
+        delta_int = int(time_delta * 200)
+        self.current_brightness_int += self.brightness_direction * delta_int
         
-        if self.current_brightness >= BREATHE_MAX_BRIGHTNESS:
-            self.current_brightness = BREATHE_MAX_BRIGHTNESS
-            self.brightness_direction = -abs(self.brightness_direction)
-        elif self.current_brightness <= BREATHE_MIN_BRIGHTNESS:
-            self.current_brightness = BREATHE_MIN_BRIGHTNESS
-            self.brightness_direction = abs(self.brightness_direction)
+        # 限制亮度范围 10-100（对应 0.1-1.0）
+        if self.current_brightness_int >= 100:
+            self.current_brightness_int = 100
+            self.brightness_direction = -1
+        elif self.current_brightness_int <= 10:
+            self.current_brightness_int = 10
+            self.brightness_direction = 1
         
-        self.set_color_with_brightness(color, self.current_brightness)
+        # 转换为浮点数设置亮度
+        brightness = self.current_brightness_int / 100
+        self.set_color_with_brightness(color, brightness)
     
     def start_transition(self, duration):
         """启动过渡计时器"""

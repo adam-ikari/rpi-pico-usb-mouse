@@ -58,29 +58,40 @@ class MouseMover:
     def _create_velocity_profile(self, total_steps):
         """
         创建速度变化曲线，模拟人类移动的加速-匀速-减速模式
+        使用整数运算优化性能
         """
         # 将移动分为三个阶段：加速、匀速、减速
-        accel_steps = max(1, int(total_steps * ACCEL_DECEL_PHASE_RATIO))
-        decel_steps = max(1, int(total_steps * ACCEL_DECEL_PHASE_RATIO))
+        accel_steps = max(1, (total_steps * 40) // 100)  # 40% 用整数运算
+        decel_steps = max(1, (total_steps * 40) // 100)
         const_steps = total_steps - accel_steps - decel_steps
         
         profile = []
         
-        # 加速阶段 - 更缓慢的加速
+        # 加速阶段 - 使用整数运算
+        # factor = 0.01 + 0.99 * t^2
+        accel_steps_max = max(accel_steps, 1)
         for i in range(accel_steps):
-            t = i / max(accel_steps, 1)
-            factor = ACCEL_START_FACTOR + (ACCEL_END_FACTOR - ACCEL_START_FACTOR) * t * t
-            profile.append(factor)
+            # t = i / accel_steps，使用整数运算
+            # t_squared = (i * i) / (accel_steps * accel_steps)
+            # factor = 0.01 + 0.99 * t_squared
+            t_sq_scaled = (i * i * 100) // (accel_steps_max * accel_steps_max)  # 0-100
+            factor = 1 + (99 * t_sq_scaled) // 100  # 1-100，表示 0.01-1.00
+            profile.append(factor / 100)  # 转回小数
         
         # 匀速阶段
         for i in range(const_steps):
-            profile.append(1.0 + random_pool.uniform(CONSTANT_PHASE_MIN_VARIATION, CONSTANT_PHASE_MAX_VARIATION))
+            # 1.0 + uniform(-0.05, 0.05)
+            variation = random_pool.uniform(-5, 5) / 100  # -0.05 到 0.05
+            profile.append(1.0 + variation)
         
-        # 减速阶段 - 更缓慢的减速
+        # 减速阶段 - 使用整数运算
+        decel_steps_max = max(decel_steps, 1)
         for i in range(decel_steps):
-            t = i / max(decel_steps, 1)
-            factor = DECEL_START_FACTOR - (DECEL_START_FACTOR - DECEL_END_FACTOR) * t * t
-            profile.append(max(DECEL_MIN_FACTOR, factor))
+            # factor = 1.0 - 0.995 * t^2
+            t_sq_scaled = (i * i * 100) // (decel_steps_max * decel_steps_max)
+            factor = 100 - (99 * t_sq_scaled) // 100  # 100-1
+            factor = max(1, factor)  # 最小 0.01
+            profile.append(factor / 100)
         
         return profile
 
