@@ -170,15 +170,16 @@ class PageScanningMode(MovementMode):
             if state["current_step"] < len(state["scan_bezier_points"]):
                 x_move, y_move = state["scan_bezier_points"][state["current_step"]]
                 
-                # 根据扫描方向应用不同速度：向右慢(80%)，向左快(140%)
+                # 仅对 X 轴应用速度缩放（水平扫描）
                 if state["scan_direction"] == 1:
-                    # 向右扫描：慢速
                     x_move = (x_move * SCAN_SPEED_RIGHT) // 100
-                    y_move = (y_move * SCAN_SPEED_RIGHT) // 100
                 else:
-                    # 向左扫描：快速
                     x_move = (x_move * SCAN_SPEED_LEFT) // 100
-                    y_move = (y_move * SCAN_SPEED_LEFT) // 100
+                
+                # 最后一步：强制校正到终点
+                if state["current_step"] == len(state["scan_bezier_points"]) - 1:
+                    expected_x = state["end_x"] if state["scan_direction"] == 1 else state["start_x"]
+                    x_move = expected_x - state["current_x"]
                 
                 if state["current_step"] % random_pool.randint(10, 50) == 0:
                     pause_or_slow = random_pool.choice(["pause", "slow", "normal"])
@@ -186,7 +187,6 @@ class PageScanningMode(MovementMode):
                         return False
                     elif pause_or_slow == "slow":
                         x_move = (x_move * SLOW_SPEED_FACTOR) // 100
-                        y_move = (y_move * SLOW_SPEED_FACTOR) // 100
                 
                 self.mouse_mover.mouse.move(x=int(x_move), y=int(y_move))
                 state["current_x"] += x_move
@@ -241,11 +241,12 @@ class ExploratoryMovementMode(MovementMode):
         return {
             "target_x": target_x, 
             "target_y": target_y, 
-            "exploratory_moves_left": random_pool.randint(3, 7), 
+            "exploratory_moves_left": random_pool.randint(2, 4),  # 减少移动次数
             "current_x": target_x, 
             "current_y": target_y, 
             "time_at_exploration": 0, 
-            "total_time_at_exploration": random_pool.uniform(EXPLORATORY_STAY_TIME_MIN, EXPLORATORY_STAY_TIME_MAX)
+            "total_time_at_exploration": random_pool.uniform(EXPLORATORY_STAY_TIME_MIN, EXPLORATORY_STAY_TIME_MAX),
+            "last_move_time": 0  # 记录上次移动时间
         }
     
     def update(self, state):
@@ -254,12 +255,16 @@ class ExploratoryMovementMode(MovementMode):
             self.mouse_mover.update()
             return False
         elif state["exploratory_moves_left"] > 0:
-            direction_x = random_pool.randint(-20, 20)
-            direction_y = random_pool.randint(-20, 20)
-            self.mouse_mover.smooth_move_small(state["current_x"], state["current_y"], state["current_x"] + direction_x, state["current_y"] + direction_y)
-            state["current_x"] += direction_x
-            state["current_y"] += direction_y
-            state["exploratory_moves_left"] -= 1
+            # 增加移动间隔，避免频繁移动
+            if state["last_move_time"] == 0 or current_time - state["last_move_time"] >= 1.5:
+                # 更大的移动距离，更自然的探索
+                direction_x = random_pool.randint(-150, 150)
+                direction_y = random_pool.randint(-150, 150)
+                self.mouse_mover.quick_move_to_target(direction_x, direction_y)
+                state["current_x"] += direction_x
+                state["current_y"] += direction_y
+                state["exploratory_moves_left"] -= 1
+                state["last_move_time"] = current_time
             return False
         elif state["time_at_exploration"] < state["total_time_at_exploration"]:
             if "exploration_start_time" not in state:

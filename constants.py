@@ -222,8 +222,8 @@ HUMAN_REACTION_DELAY_MIN = 100  # 最小延迟 100ms
 HUMAN_REACTION_DELAY_MAX = 400  # 最大延迟 400ms
 
 # PID 扰动参数
-PID_NOISE_AMPLITUDE = 15  # 扰动幅度 (×100)
-PID_NOISE_FREQUENCY = 200  # 扰动频率（毫秒）
+PID_NOISE_AMPLITUDE = 3  # 扰动幅度（细微抖动）
+PID_NOISE_FREQUENCY = 500  # 扰动频率（毫秒，更平缓）
 
 # 页面扫描速度参数（左右不对称）
 SCAN_SPEED_RIGHT = 80   # 向右扫描速度 80% (慢)

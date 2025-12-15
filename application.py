@@ -42,8 +42,16 @@ class MouseSimulatorApp:
         # 初始化性能统计
         self.perf_stats = PerformanceStats(enable_stats=enable_performance_stats)
         
-        # 初始化鼠标移动器
-        self.mouse_mover = MouseMover(mouse_device, self.perf_stats)
+        # 在顶层创建 PID 控制器
+        from pid_controller import PIDController
+        self.pid_controller = PIDController()
+        
+        # 初始化鼠标移动器（依赖注入）
+        self.mouse_mover = MouseMover(
+            mouse_device, 
+            self.perf_stats, 
+            pid_controller=self.pid_controller
+        )
         
         # 初始化LED控制器
         self.led_controller = LEDController(pixels, self.perf_stats)
@@ -113,6 +121,21 @@ class MouseSimulatorApp:
         
         # 更新当前模式
         if self.context.current_mode and self.context.current_state and self.current_mode_instance:
+            # 检查超时保护
+            elapsed = current_time - self.context.mode_start_time
+            if elapsed >= self.context.mode_duration:
+                print(f"[Mode] Timeout: {self.context.current_mode} ({elapsed:.1f}s)")
+                # 强制结束当前模式
+                self.current_mode_instance = None
+                self.context.current_mode = None
+                self.context.post_mode_wait_time = current_time
+                self.context.post_mode_wait_duration = 0.5  # 短暂等待后继续
+                next_mode_name = weighted_mode_selector.choice()
+                self.context.next_mode = next_mode_name
+                self.context.color_transition_started = False
+                self.led_controller.set_mode('idle')
+                return
+            
             if self.current_mode_instance.update(self.context.current_state):
                 # 模式完成，决定是否等待
                 wait_min, wait_max = self.current_mode_instance.get_wait_time_range()

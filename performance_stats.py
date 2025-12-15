@@ -94,8 +94,9 @@ class PerformanceStats:
     
     def get_fps(self):
         avg_frame_time = self.get_avg_frame_time()
-        if avg_frame_time > 0:
-            return 1.0 / avg_frame_time
+        if avg_frame_time > 0.001:  # 设置合理阈值（>1ms）
+            fps = 1.0 / avg_frame_time
+            return min(fps, 1000)   # 限制最大 FPS 为 1000
         return 0
     
     def get_uptime(self):

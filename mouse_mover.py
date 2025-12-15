@@ -8,7 +8,7 @@ from fast_math import fast_distance, percent_to_float
 class MouseMover:
     """鼠标移动控制器，使用非阻塞方式实现"""
     
-    def __init__(self, mouse_device, perf_stats=None):
+    def __init__(self, mouse_device, perf_stats=None, pid_controller=None):
         self.mouse = mouse_device
         self.perf_stats = perf_stats
         self.active = False
@@ -28,9 +28,12 @@ class MouseMover:
         self.current_x = 0
         self.current_y = 0
         
-        # PID 控制器（模拟人手调整）- 延迟导入
-        from pid_controller import PIDController
-        self.pid = PIDController()
+        # PID 控制器（依赖注入）
+        if pid_controller is None:
+            from pid_controller import PIDController
+            self.pid = PIDController()
+        else:
+            self.pid = pid_controller
         self.target_x = 0
         self.target_y = 0
 
@@ -101,17 +104,19 @@ class MouseMover:
         return x, y
     
     def _quadratic_bezier(self, t, p0, p1, p2):
-        """二次贝塞尔曲线计算（使用整数优化）"""
-        t_int = int(t * 100)
-        u_int = 100 - t_int
+        """二次贝塞尔曲线计算（使用 256 定点数，精度更高）"""
+        # 使用 256 作为定点数基数（位移运算更高效）
+        t_int = int(t * 256)
+        u_int = 256 - t_int
         
-        uu = (u_int * u_int) // 100
-        tt = (t_int * t_int) // 100
-        ut2 = (2 * u_int * t_int) // 100
+        # 使用位移替代除法，减少精度损失
+        uu = (u_int * u_int) >> 8
+        tt = (t_int * t_int) >> 8
+        ut2 = (2 * u_int * t_int) >> 8
         
-        p = (uu * p0) // 100
-        p += (ut2 * p1) // 100
-        p += (tt * p2) // 100
+        p = (uu * p0) >> 8
+        p += (ut2 * p1) >> 8
+        p += (tt * p2) >> 8
         
         return p
     

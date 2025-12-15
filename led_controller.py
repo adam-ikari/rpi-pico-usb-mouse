@@ -35,6 +35,9 @@ class LEDController:
         
         # LED模式：'active' 活动中（恒定亮度） / 'idle' 停顿中（呼吸灯）
         self.led_mode = 'idle'
+        
+        # 初始化缓存变量，避免 update 中动态创建
+        self._last_color = (0, 0, 0)
     
     def _ease_in_out(self, t):
         """缓动函数：ease-in-out (平滑加速和减速)"""
